@@ -24,8 +24,8 @@ scenario: {scenario_id: package-test, duration_s: 12, sampling_interval_ms: 1000
 
 def test_partition_packages_are_deterministic_and_do_not_include_run_truth_or_seeds(tmp_path):
     dataset, license_file = _source_dataset(tmp_path)
-    first = package_dataset(dataset, "0.4.0", tmp_path / "release-a", license_file, ["train", "test"])
-    second = package_dataset(dataset, "0.4.0", tmp_path / "release-b", license_file, ["train", "test"])
+    first = package_dataset(dataset, "0.4.0", tmp_path / "release-a", license_file, "CC-BY-4.0", ["train", "test"])
+    second = package_dataset(dataset, "0.4.0", tmp_path / "release-b", license_file, "CC-BY-4.0", ["train", "test"])
     first_manifest = json.loads((first / "release_manifest.json").read_text(encoding="utf-8"))
     second_manifest = json.loads((second / "release_manifest.json").read_text(encoding="utf-8"))
     assert first_manifest == second_manifest
@@ -33,6 +33,8 @@ def test_partition_packages_are_deterministic_and_do_not_include_run_truth_or_se
     assert set(first_manifest["partitions"]) == {"train", "test"}
     assert first_manifest["contains_run_seeds"] is False
     assert first_manifest["contains_ground_truth"] is False
+    assert first_manifest["partitions"]["train"]["class_distribution"]["normal"] == 4
+    assert first_manifest["partitions"]["train"]["asset_distribution"]["pump"] == 4
     for partition in ("train", "test"):
         package = first_manifest["partitions"][partition]["path"]
         assert (first / package).read_bytes() == (second / package).read_bytes()
@@ -52,12 +54,12 @@ def test_partition_package_refuses_corrupted_source_and_existing_output(tmp_path
     original = (dataset / "train.parquet").read_bytes()
     (dataset / "train.parquet").write_bytes(b"corrupt")
     with pytest.raises(ValueError, match="hash mismatch"):
-        package_dataset(dataset, "0.4.0", tmp_path / "bad-release", license_file, ["train"])
+        package_dataset(dataset, "0.4.0", tmp_path / "bad-release", license_file, "CC-BY-4.0", ["train"])
     (dataset / "train.parquet").write_bytes(original)
     existing = tmp_path / "existing"
     existing.mkdir()
     with pytest.raises(FileExistsError, match="must not already exist"):
-        package_dataset(dataset, "0.4.0", existing, license_file, ["train"])
+        package_dataset(dataset, "0.4.0", existing, license_file, "CC-BY-4.0", ["train"])
 
 
 def test_partition_package_requires_licensed_synthetic_non_customer_manifest(tmp_path):
@@ -66,12 +68,18 @@ def test_partition_package_requires_licensed_synthetic_non_customer_manifest(tmp
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["customer_data"] = True
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    with pytest.raises(ValueError, match="licensed synthetic non-customer"):
-        package_dataset(dataset, "0.4.0", tmp_path / "release", license_file, ["train"])
+    with pytest.raises(ValueError, match="synthetic non-customer"):
+        package_dataset(dataset, "0.4.0", tmp_path / "release", license_file, "CC-BY-4.0", ["train"])
 
 
 @pytest.mark.parametrize("partitions", [[], ["challenge"], ["train", "train"]])
 def test_partition_package_rejects_invalid_selection(tmp_path, partitions):
     dataset, license_file = _source_dataset(tmp_path)
     with pytest.raises(ValueError, match="partitions must be unique values"):
-        package_dataset(dataset, "0.4.0", tmp_path / "invalid", license_file, partitions)
+        package_dataset(dataset, "0.4.0", tmp_path / "invalid", license_file, "CC-BY-4.0", partitions)
+
+
+def test_partition_package_checks_license_against_suite_declaration(tmp_path):
+    dataset, license_file = _source_dataset(tmp_path)
+    with pytest.raises(ValueError, match="does not match suite license"):
+        package_dataset(dataset, "0.4.0", tmp_path / "wrong-license", license_file, "CC0-1.0", ["train"])

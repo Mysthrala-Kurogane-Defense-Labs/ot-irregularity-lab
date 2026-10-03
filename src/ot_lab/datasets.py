@@ -44,11 +44,14 @@ def package_dataset(
     dataset_version: str,
     output: Path,
     license_file: Path,
+    data_license: str,
     partitions: list[str] | None = None,
 ) -> Path:
     """Build deterministic per-partition ZIPs with seed-free release manifests."""
     if not dataset_version.strip():
         raise ValueError("dataset_version must not be empty")
+    if not data_license.strip():
+        raise ValueError("data_license must not be empty")
     selected = list(PARTITIONS) if partitions is None else partitions
     if not selected or len(selected) != len(set(selected)) or any(item not in PARTITIONS for item in selected):
         raise ValueError(f"partitions must be unique values from {', '.join(PARTITIONS)}")
@@ -67,9 +70,11 @@ def package_dataset(
         or source_manifest.get("synthetic") is not True
         or source_manifest.get("generated") is not True
         or source_manifest.get("customer_data") is not False
-        or not source_manifest.get("data_license")
     ):
-        raise ValueError("only completed, licensed synthetic non-customer datasets can be packaged")
+        raise ValueError("only completed synthetic non-customer datasets can be packaged")
+    declared_license = source_manifest.get("data_license")
+    if declared_license and declared_license != data_license:
+        raise ValueError(f"selected data license {data_license!r} does not match suite license {declared_license!r}")
     if any(name not in PARTITIONS for name in source_manifest.get("partition_files", {})):
         raise ValueError("dataset manifest contains a non-public partition")
     license_text = license_file.read_text(encoding="utf-8").strip()
@@ -78,6 +83,13 @@ def package_dataset(
     source_hash = _sha256(manifest_path)
     license_bytes = license_file.read_bytes()
     artifacts: dict[str, dict[str, Any]] = {}
+    asset_distribution_by_partition: dict[str, dict[str, int]] = {name: {} for name in PARTITIONS}
+    for run in source_manifest.get("runs", []):
+        partition_name = run.get("partition")
+        if partition_name in asset_distribution_by_partition:
+            distribution = asset_distribution_by_partition[partition_name]
+            for asset_class in run.get("asset_classes", []):
+                distribution[asset_class] = distribution.get(asset_class, 0) + 1
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=f".{output.name}.package-", dir=output.parent) as temporary:
         stage = Path(temporary)
@@ -98,11 +110,13 @@ def package_dataset(
                 "schema_version": source_manifest["schema_version"],
                 "suite_id": source_manifest["suite_id"],
                 "suite_version": source_manifest["suite_version"],
-                "data_license": source_manifest.get("data_license"),
+                "data_license": data_license,
                 "partition": partition,
                 "run_count": source_manifest.get("partition_counts", {}).get(partition, 0),
                 "observation_count": details.get("observation_count", 0),
                 "class_distribution": source_manifest.get("class_distribution_by_partition", {}).get(partition, {}),
+                "event_distribution": source_manifest.get("event_distribution_by_partition", {}).get(partition, {}),
+                "asset_distribution": asset_distribution_by_partition.get(partition, {}),
                 "artifact": {"path": f"{partition}.parquet", "sha256": content_hash, "bytes": source.stat().st_size},
                 "contains_ground_truth": False,
                 "contains_run_seeds": False,
@@ -121,6 +135,9 @@ def package_dataset(
                 "bytes": archive_path.stat().st_size,
                 "observation_count": details.get("observation_count", 0),
                 "run_count": source_manifest.get("partition_counts", {}).get(partition, 0),
+                "class_distribution": source_manifest.get("class_distribution_by_partition", {}).get(partition, {}),
+                "event_distribution": source_manifest.get("event_distribution_by_partition", {}).get(partition, {}),
+                "asset_distribution": asset_distribution_by_partition.get(partition, {}),
             }
         release_manifest = {
             "release_manifest_version": "1.0.0",
@@ -131,7 +148,7 @@ def package_dataset(
             "schema_version": source_manifest["schema_version"],
             "suite_id": source_manifest["suite_id"],
             "suite_version": source_manifest["suite_version"],
-            "data_license": source_manifest.get("data_license"),
+            "data_license": data_license,
             "license_file": "DATASET_LICENSE.txt",
             "partitions": artifacts,
             "synthetic": True,

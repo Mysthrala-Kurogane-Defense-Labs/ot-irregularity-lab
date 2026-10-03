@@ -45,6 +45,7 @@ def main() -> None:
     package_cmd = dataset_subcommands.add_parser("package", help="create deterministic, separate ZIP artifacts for public partitions")
     package_cmd.add_argument("--dataset", type=Path, required=True)
     package_cmd.add_argument("--dataset-version", required=True, help="public dataset release version, for example 0.4.0")
+    package_cmd.add_argument("--data-license", required=True, help="license identifier, for example CC-BY-4.0 or CC0-1.0")
     package_cmd.add_argument("--license-file", type=Path, required=True, help="full data license notice to include with each artifact")
     package_cmd.add_argument("--partition", dest="partitions", nargs="+", choices=("train", "validation", "test"))
     package_cmd.add_argument("--output", type=Path, required=True, help="new directory for per-partition ZIPs and release manifest")
@@ -103,7 +104,7 @@ def main() -> None:
         batch(args.suite, args.runs, args.output, args.seed, resume=getattr(args, "resume", False), workers=args.workers)
         print(args.output / "dataset_manifest.json")
     elif args.command == "dataset" and args.dataset_command == "package":
-        print(package_dataset(args.dataset, args.dataset_version, args.output, args.license_file, args.partitions))
+        print(package_dataset(args.dataset, args.dataset_version, args.output, args.license_file, args.data_license, args.partitions))
     elif args.command == "calibration":
         print(write_metropt_analysis(args.input, args.output))
     elif args.command == "benchmark":
