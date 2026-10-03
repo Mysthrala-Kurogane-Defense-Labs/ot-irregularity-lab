@@ -4,6 +4,8 @@ OT Irregularity Lab is an independent, open source preview toolkit for generatin
 
 Current software release: [v0.3.1](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/releases/tag/v0.3.1).
 
+Current dataset release: [OT Irregularity Dataset v0.4.0 (1,000 runs)](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/releases/tag/dataset-v0.4.0). Telemetry and labels are distributed as separate archives.
+
 All generated data is synthetic, generated, and non-customer data. Process simulation runs without OpenPLC or protocol services. Apache-2.0 applies to the software; dataset releases declare their own data license and version.
 
 ## Preview status
