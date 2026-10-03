@@ -102,10 +102,11 @@ def run_docker_submission(image: str, run_dir: Path, output: Path, timeout_s: in
         output_dir = sandbox / "out"
         output_dir.mkdir()
         output_path = output_dir / "output.jsonl"
+        cid_path = sandbox / "container.cid"
         input_path.write_bytes(telemetry.read_bytes())
         output_mount = f"type=bind,src={output_dir},dst=/ot-lab/out"
         args = [
-            docker, "run", "--rm", "--network=none", "--read-only", "--cap-drop=ALL",
+            docker, "run", "--cidfile", str(cid_path), "--pull=never", "--rm", "--network=none", "--read-only", "--cap-drop=ALL",
             "--security-opt=no-new-privileges:true", "--pids-limit=128", "--memory=2g",
             "--cpus=2", "--user=65534:65534", "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
             "--env", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
@@ -115,7 +116,13 @@ def run_docker_submission(image: str, run_dir: Path, output: Path, timeout_s: in
             "--env", "OT_LAB_INPUT=/ot-lab/input.parquet", "--env", "OT_LAB_OUTPUT=/ot-lab/out/output.jsonl",
             image,
         ]
-        _run_bounded(args, cwd=sandbox, env={**os.environ, "OT_LAB_OUTPUT": str(output_path)}, timeout_s=timeout_s, max_output_bytes=max_output_bytes, monitored_output=output_path)
+        try:
+            _run_bounded(args, cwd=sandbox, env={**os.environ, "OT_LAB_OUTPUT": str(output_path)}, timeout_s=timeout_s, max_output_bytes=max_output_bytes, monitored_output=output_path)
+        finally:
+            if cid_path.is_file():
+                container_id = cid_path.read_text(encoding="utf-8").strip()
+                if container_id:
+                    subprocess.run([docker, "rm", "--force", container_id], timeout=30, check=False, capture_output=True)
         if not output_path.is_file():
             raise FileNotFoundError("container did not create /ot-lab/out/output.jsonl")
         if output_path.stat().st_size > max_output_bytes:
