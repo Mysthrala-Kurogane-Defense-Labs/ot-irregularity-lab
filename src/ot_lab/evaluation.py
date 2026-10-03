@@ -158,7 +158,7 @@ def _window_pr_auc(events: list[dict[str, Any]], predictions: pl.DataFrame, tele
         recall = tp / (tp + fn) if tp + fn else 0.0
         precisions.append(precision)
         recalls.append(recall)
-    # Average precision integrates the right-continuous precision envelope at recall changes.
+    # Non-interpolated average precision sums precision at each observed recall change.
     previous_recall = 0.0
     area = 0.0
     for precision, recall in zip(precisions, recalls, strict=True):

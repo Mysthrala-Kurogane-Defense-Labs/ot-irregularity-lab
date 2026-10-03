@@ -275,6 +275,23 @@ def test_benchmark_class_imbalance_and_mixed_assets_use_half_open_intervals(tmp_
     assert not labels[timestamps.index(event_end_dt)]
 
 
+def test_normal_only_benchmark_reports_pr_auc_as_undefined(tmp_path):
+    run_dir = tmp_path / "normal-run"
+    write_run(fixture_scenario(), 30, run_dir)
+    predictions = tmp_path / "predictions.jsonl"
+    predictions.write_text(json.dumps({
+        "asset_id": "ASSET-01", "window_start": EPOCH.isoformat(),
+        "window_end": (EPOCH + timedelta(seconds=1)).isoformat(), "irregularity_score": 0.9,
+    }) + "\n", encoding="utf-8")
+    result = evaluate(run_dir / "ground_truth.json", predictions, tmp_path / "report",
+                      telemetry_path=run_dir / "telemetry.parquet")
+    assert result["event_type_metrics"] == {}
+    assert result["event_detection_rate"] == 0
+    assert result["false_positive_windows"] == 1
+    assert result["window_pr_auc"] is None
+    assert result["pr_auc"] is None
+
+
 def test_benchmark_scores_missing_samples_on_expected_cadence(tmp_path):
     scenario = fixture_scenario(anomaly={
         "type": "missing_telemetry", "asset": "ASSET-01", "start": 5,
