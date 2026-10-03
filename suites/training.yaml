@@ -1,0 +1,14 @@
+suite_id: training-v0.1
+partitions:
+  train: 0.7
+  validation: 0.15
+  test: 0.15
+scenario:
+  scenario_id: normal-cnc-training
+  scenario_version: 1.0.0
+  run_id: base
+  duration_s: 60
+  sampling_interval_ms: 1000
+  assets:
+    - asset_id: CNC-01
+      asset_class: cnc

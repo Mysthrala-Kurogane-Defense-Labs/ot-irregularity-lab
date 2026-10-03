@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ot-irregularity-lab"
+version = "0.1.0"
+description = "Reproducible synthetic industrial telemetry datasets and model-agnostic benchmarks"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+authors = [{ name = "Mysthrala Kurogane Defense Labs" }]
+dependencies = [
+  "numpy>=2.0",
+  "polars>=1.20",
+  "pyarrow>=18.0",
+  "pydantic>=2.10",
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "matplotlib>=3.9"]
+
+[project.scripts]
+ot-lab = "ot_lab.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ot_lab"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

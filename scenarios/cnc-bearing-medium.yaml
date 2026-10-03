@@ -1,0 +1,20 @@
+scenario_id: cnc-bearing-medium
+scenario_version: 1.0.0
+run_id: cnc-0042
+description: CNC process with gradual bearing degradation, medium intensity.
+duration_s: 600
+sampling_interval_ms: 1000
+sampling_jitter_ms: 10
+ambient_temperature_c: 22
+assets:
+  - asset_id: CNC-01
+    asset_class: cnc
+anomalies:
+  - type: bearing_degradation
+    asset: CNC-01
+    start: 240
+    duration: 180
+    severity: 0.4
+    parameters:
+      vibration_gain: 0.20
+      temperature_gain: 0.08

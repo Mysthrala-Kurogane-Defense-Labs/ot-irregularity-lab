@@ -1,0 +1,9 @@
+scenario_id: normal-pump
+scenario_version: 1.0.0
+run_id: pump-normal-0001
+duration_s: 600
+sampling_interval_ms: 1000
+sampling_jitter_ms: 10
+assets:
+  - asset_id: PUMP-01
+    asset_class: pump
