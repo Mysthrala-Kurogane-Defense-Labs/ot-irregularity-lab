@@ -102,6 +102,7 @@ def package_dataset(
             if not source.is_file() or _sha256(source) != details.get("sha256"):
                 raise ValueError(f"partition artifact hash mismatch: {source}")
             content_hash = _sha256(source)
+            partition_runs = [run for run in source_manifest.get("runs", []) if run.get("partition") == partition]
             partition_meta = {
                 "dataset_id": source_manifest["dataset_id"],
                 "dataset_version": dataset_version,
@@ -118,6 +119,7 @@ def package_dataset(
                 "event_distribution": source_manifest.get("event_distribution_by_partition", {}).get(partition, {}),
                 "asset_distribution": asset_distribution_by_partition.get(partition, {}),
                 "artifact": {"path": f"{partition}.parquet", "sha256": content_hash, "bytes": source.stat().st_size},
+                "labels_artifact": {"path": f"{partition}-labels.zip"},
                 "contains_ground_truth": False,
                 "contains_run_seeds": False,
                 "synthetic": True,
@@ -129,10 +131,63 @@ def package_dataset(
                 _zip_file(archive, f"{partition}.parquet", source)
                 _zip_bytes(archive, "DATASET_LICENSE.txt", license_bytes)
                 _zip_bytes(archive, "release_manifest.json", (json.dumps(partition_meta, indent=2, sort_keys=True) + "\n").encode())
+            label_manifest_runs: list[dict[str, Any]] = []
+            labels_path = stage / f"{partition}-labels.zip"
+            with zipfile.ZipFile(labels_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+                _zip_bytes(archive, "DATASET_LICENSE.txt", license_bytes)
+                for run in partition_runs:
+                    run_id = run["run_id"]
+                    run_dir = dataset / partition / run_id
+                    truth_path = run_dir / "ground_truth.json"
+                    metadata_path = run_dir / "run_metadata.json"
+                    if _sha256(truth_path) != run.get("ground_truth_sha256") or _sha256(metadata_path) != run.get("metadata_sha256"):
+                        raise ValueError(f"ground-truth or metadata hash mismatch for run {run_id}")
+                    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                    if metadata.get("run_id") != run_id:
+                        raise ValueError(f"run metadata id mismatch for {run_id}")
+                    safe_metadata = {
+                        key: metadata[key]
+                        for key in (
+                            "run_id", "started_at", "duration_s", "sampling_interval_ms",
+                            "observation_count", "asset_count", "asset_ids", "synthetic",
+                            "generated", "customer_data",
+                        )
+                    }
+                    ground_truth_name = f"ground_truth/{run_id}.json"
+                    evaluation_metadata_name = f"evaluation_metadata/{run_id}.json"
+                    _zip_file(archive, ground_truth_name, truth_path)
+                    _zip_bytes(archive, evaluation_metadata_name, (json.dumps(safe_metadata, indent=2, sort_keys=True) + "\n").encode())
+                    label_manifest_runs.append({
+                        "run_id": run_id,
+                        "ground_truth": {"path": ground_truth_name, "sha256": _sha256(truth_path)},
+                        "evaluation_metadata": {
+                            "path": evaluation_metadata_name,
+                            "sha256": hashlib.sha256((json.dumps(safe_metadata, indent=2, sort_keys=True) + "\n").encode()).hexdigest(),
+                        },
+                    })
+                label_meta = {
+                    "dataset_id": source_manifest["dataset_id"],
+                    "dataset_version": dataset_version,
+                    "source_dataset_manifest_sha256": source_hash,
+                    "partition": partition,
+                    "data_license": data_license,
+                    "ground_truth_schema_version": source_manifest["ground_truth_schema_version"],
+                    "runs": label_manifest_runs,
+                    "contains_run_seeds": False,
+                    "contains_scenarios": False,
+                    "contains_ground_truth": True,
+                }
+                _zip_bytes(archive, "release_manifest.json", (json.dumps(label_meta, indent=2, sort_keys=True) + "\n").encode())
             artifacts[partition] = {
                 "path": archive_path.name,
                 "sha256": _sha256(archive_path),
                 "bytes": archive_path.stat().st_size,
+                "labels_artifact": {
+                    "path": labels_path.name,
+                    "sha256": _sha256(labels_path),
+                    "bytes": labels_path.stat().st_size,
+                    "run_count": len(label_manifest_runs),
+                },
                 "observation_count": details.get("observation_count", 0),
                 "run_count": source_manifest.get("partition_counts", {}).get(partition, 0),
                 "class_distribution": source_manifest.get("class_distribution_by_partition", {}).get(partition, {}),

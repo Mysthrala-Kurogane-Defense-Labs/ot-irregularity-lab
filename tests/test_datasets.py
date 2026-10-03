@@ -38,6 +38,10 @@ def test_partition_packages_are_deterministic_and_do_not_include_run_truth_or_se
     for partition in ("train", "test"):
         package = first_manifest["partitions"][partition]["path"]
         assert (first / package).read_bytes() == (second / package).read_bytes()
+        labels_info = first_manifest["partitions"][partition]["labels_artifact"]
+        labels_package = labels_info["path"]
+        assert (first / labels_package).read_bytes() == (second / labels_package).read_bytes()
+        assert labels_info["run_count"] == first_manifest["partitions"][partition]["run_count"]
         with zipfile.ZipFile(first / package) as archive:
             assert archive.namelist() == [f"{partition}.parquet", "DATASET_LICENSE.txt", "release_manifest.json"]
             inner = json.loads(archive.read("release_manifest.json"))
@@ -47,6 +51,23 @@ def test_partition_packages_are_deterministic_and_do_not_include_run_truth_or_se
             assert "master_seed" not in inner
             assert not any("ground_truth" in name or "scenario" in name or "run_metadata" in name for name in archive.namelist())
             assert archive.read("DATASET_LICENSE.txt") == license_file.read_bytes()
+        with zipfile.ZipFile(first / labels_package) as archive:
+            assert archive.testzip() is None
+            names = archive.namelist()
+            assert "release_manifest.json" in names
+            assert not any("seed" in name or "scenario" in name for name in names)
+            label_manifest = json.loads(archive.read("release_manifest.json"))
+            assert label_manifest["contains_ground_truth"] is True
+            assert label_manifest["contains_run_seeds"] is False
+            assert label_manifest["contains_scenarios"] is False
+            assert len(label_manifest["runs"]) == labels_info["run_count"]
+            assert len([name for name in names if name.startswith("ground_truth/")]) == labels_info["run_count"]
+            assert len([name for name in names if name.startswith("evaluation_metadata/")]) == labels_info["run_count"]
+            for item in label_manifest["runs"]:
+                safe_metadata = json.loads(archive.read(item["evaluation_metadata"]["path"]))
+                assert safe_metadata["run_id"] == item["run_id"]
+                assert "seed" not in safe_metadata
+                assert "scenario_id" not in safe_metadata
 
 
 def test_partition_package_refuses_corrupted_source_and_existing_output(tmp_path):
