@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import polars as pl
 import pytest
@@ -7,7 +8,7 @@ from ot_lab.evaluation import evaluate
 from ot_lab.models import AssetSpec, Scenario
 from ot_lab.process import ProcessState, regime_at, simulate_step
 from ot_lab.simulation import simulate, write_run
-from ot_lab.submission import run_submission
+from ot_lab.submission import run_docker_submission, run_submission
 
 
 def fixture_scenario(asset_class="cnc", anomaly=None):
@@ -205,3 +206,36 @@ def test_run_submission_exposes_only_temporary_input(tmp_path):
     cmd = "python -c \"import pathlib,os; pathlib.Path(os.environ['OT_LAB_OUTPUT']).write_text('{}\\n')\""
     result = run_submission(cmd, run_dir, out)
     assert result.read_text() == "{}\n"
+
+
+def test_docker_submission_passes_only_minimal_environment(tmp_path, monkeypatch):
+    run_dir = tmp_path / "run"
+    write_run(fixture_scenario(), 2, run_dir)
+    captured = {}
+
+    class Completed:
+        returncode = 0
+        stderr = ""
+
+    def fake_run(args, **kwargs):
+        captured["args"] = args
+        # The test emulates the program writing inside the isolated output mount.
+        mount_arg = args[args.index("--mount", args.index("--mount") + 1) + 1]
+        host_dir = Path(mount_arg.split("src=", 1)[1].split(",dst=", 1)[0])
+        (host_dir / "output.jsonl").write_text("{}\n")
+        return Completed()
+
+    monkeypatch.setattr("ot_lab.submission.shutil.which", lambda _: "docker")
+    monkeypatch.setattr("ot_lab.submission.subprocess.run", fake_run)
+    out = tmp_path / "predictions.jsonl"
+    run_docker_submission("sample:latest", run_dir, out)
+    command = captured["args"]
+    assert "--network=none" in command
+    assert "--read-only" in command
+    assert "--cap-drop=ALL" in command
+    assert "--security-opt=no-new-privileges:true" in command
+    assert "--env" in command and "OT_LAB_INPUT=/ot-lab/input.parquet" in command
+    mounts = [command[i + 1] for i, item in enumerate(command[:-1]) if item == "--mount"]
+    assert len(mounts) == 2
+    assert all("ground_truth" not in mount for mount in mounts)
+    assert "GH_TOKEN" not in [command[i + 1] for i, item in enumerate(command[:-1]) if item == "--env"]

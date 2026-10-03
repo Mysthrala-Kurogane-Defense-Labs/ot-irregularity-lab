@@ -6,7 +6,7 @@ All generated data is synthetic, generated, and non-customer data. Process simul
 
 ## Preview status
 
-Python 3.12+, `uv`, NumPy, Polars, PyArrow, Pydantic, and PyYAML. It supports coupled process models for CNC, pump, compressor, and conveyor; seeded Parquet generation; independent `ground_truth.json`; run metadata; replay; batch partitions; event/window evaluation; multi-model comparison; and ephemeral challenge orchestration. The Docker profile is implemented but has not been exercised against a live daemon in the current environment. Scenario fidelity and event metric calibration remain early-preview quality; no public dataset release is included.
+Python 3.12+, `uv`, NumPy, Polars, PyArrow, Pydantic, and PyYAML. It supports coupled process models for CNC, pump, compressor, and conveyor; seeded Parquet generation; independent `ground_truth.json`; run metadata; replay; batch partitions; event/window evaluation; multi-model comparison; and ephemeral challenge orchestration. The Docker profile was exercised locally with a smoke submission and temporary challenge; broader adversarial container review remains outstanding. Scenario fidelity and event metric calibration remain early-preview quality; no public dataset release is included.
 
 ```bash
 uv sync --extra dev

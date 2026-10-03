@@ -56,6 +56,8 @@ def run_docker_submission(image: str, run_dir: Path, output: Path, timeout_s: in
             docker, "run", "--rm", "--network=none", "--read-only", "--cap-drop=ALL",
             "--security-opt=no-new-privileges:true", "--pids-limit=128", "--memory=2g",
             "--cpus=2", "--user=65534:65534", "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
+            "--env", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "--env", "TMPDIR=/tmp",
             "--mount", f"type=bind,src={input_path},dst=/ot-lab/input.parquet,readonly",
             "--mount", output_mount,
             "--env", "OT_LAB_INPUT=/ot-lab/input.parquet", "--env", "OT_LAB_OUTPUT=/ot-lab/out/output.jsonl",
