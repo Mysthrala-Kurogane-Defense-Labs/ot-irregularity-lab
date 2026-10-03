@@ -621,7 +621,10 @@ def _finalize_resumable_batch(suite_path: Path, runs: int, output: Path, seed: i
                 shutil.copytree(path, target)
             else:
                 shutil.copy2(path, target)
-        _batch_to_directory(suite_path, runs, staging, seed, resume_existing=True)
+        _batch_to_directory(
+            suite_path, runs, staging, seed, command_output=output,
+            resume_existing=True, dataset_id=output.name,
+        )
         (staging / ".resume.json").unlink(missing_ok=True)
         backup = output.with_name(f".{output.name}.checkpoint")
         if backup.exists():
@@ -636,7 +639,11 @@ def _finalize_resumable_batch(suite_path: Path, runs: int, output: Path, seed: i
     finally:
         if staging.exists():
             shutil.rmtree(staging)
-def _batch_to_directory(suite_path: Path, runs: int, output: Path, seed: int, command_output: Path | None = None, resume_existing: bool = False) -> None:
+def _batch_to_directory(
+    suite_path: Path, runs: int, output: Path, seed: int,
+    command_output: Path | None = None, resume_existing: bool = False,
+    dataset_id: str | None = None,
+) -> None:
     if runs <= 0:
         raise ValueError("runs must be positive")
     output.mkdir(parents=True, exist_ok=True)
@@ -741,7 +748,7 @@ def _batch_to_directory(suite_path: Path, runs: int, output: Path, seed: int, co
     lockfile = Path(__file__).resolve().parents[2] / "uv.lock"
     manifest = {
         "manifest_version": "1.0.0",
-        "dataset_id": output.name, "suite_id": suite.get("suite_id", suite_path.stem),
+        "dataset_id": dataset_id or output.name, "suite_id": suite.get("suite_id", suite_path.stem),
         "suite_version": suite.get("suite_version", "1.0.0"),
         "data_license": suite.get("data_license"),
         "suite_sha256": hashlib.sha256(suite_path.read_bytes()).hexdigest(),

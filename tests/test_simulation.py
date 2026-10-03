@@ -677,6 +677,8 @@ generation:
     simulation.batch(suite, 8, clean, seed=912)
     resumed_manifest = json.loads((resumable / "dataset_manifest.json").read_text())
     clean_manifest = json.loads((clean / "dataset_manifest.json").read_text())
+    assert resumed_manifest["dataset_id"] == "resumable"
+    assert resumed_manifest["generator_argv"][-1] == str(resumable)
     assert [(run["run_id"], run["seed"], run["telemetry_sha256"]) for run in resumed_manifest["runs"]] == [
         (run["run_id"], run["seed"], run["telemetry_sha256"]) for run in clean_manifest["runs"]
     ]

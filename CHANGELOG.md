@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0 — 2026-10-03
+
+- Made configured anomaly severity scale continuous signal effects and telemetry-loss probability; added deterministic multi-tag loss selection and 40-seed empirical rate checks.
+- Added deterministic resumable dataset generation with validated per-run checkpoints and atomic final publication.
+- Expanded challenge case sampling from versioned suite distributions and kept seed/scenario details out of model input.
+- Added event metric reference fixtures and timezone-aware prediction validation.
+- Added bounded model/container execution with timeout, log retention and configurable prediction output ceiling; documented the host/runtime threat boundary.
+- Added optional OPC UA telemetry replay (`opcua` extra), read-only variables and metadata, plus a loopback-only default endpoint.
+- Added source-backed calibration evidence notes; process dynamics remain simplified and uncalibrated.
+- Added CI matrix coverage for core installation and OPC UA optional adapter.
+
 ## 0.2.0 — 2026-10-03
 
 - Added a weighted suite generator for mixed normal/fault datasets with variable assets, regimes, run duration, cadence, jitter, ambient conditions, event onset, duration, severity, and parameters.

@@ -6,7 +6,7 @@ All generated data is synthetic, generated, and non-customer data. Process simul
 
 ## Preview status
 
-Python 3.12+, `uv`, NumPy, Polars, PyArrow, Pydantic, and PyYAML. It supports coupled process models for CNC, pump, compressor, and conveyor; seeded Parquet generation; independent event and operating-regime ground truth; run replay; randomized train/validation/test datasets; event and expected-cadence evaluation; multi-model comparison; and ephemeral challenge orchestration. The Docker profile is a baseline isolation profile, not a security certification. Process models and v0.2 benchmark metrics remain simplified estimates and should be read with their documented limits.
+Python 3.12+, `uv`, NumPy, Polars, PyArrow, Pydantic, and PyYAML. It supports coupled process models for CNC, pump, compressor, and conveyor; seeded Parquet generation; independent event and operating-regime ground truth; run replay; resumable randomized train/validation/test datasets; event and expected-cadence evaluation; multi-model comparison; ephemeral challenges; and optional OPC UA replay. The Docker profile is a baseline isolation profile, not a security certification. Process models remain simplified and uncalibrated; read [CALIBRATION.md](CALIBRATION.md) and [ROADMAP.md](ROADMAP.md) for limits.
 
 ```bash
 uv sync --extra dev
@@ -20,11 +20,13 @@ For long runs, add `--resume` to keep per-run checkpoints after interruption. Re
 
 The randomized training suite mixes normal process variation with seeded events across all 15 supported event families. Its realized class, event, asset, and regime distributions are recorded in the dataset manifest. See [the synthetic dataset design and source analysis](SYNTHETIC_DATASET_DESIGN.md) for the sampling choices and limits.
 
-The 1,000-run [OT Irregularity Training Dataset v0.2.0](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/releases/tag/dataset-v0.2.0) is published as a release asset under CC BY 4.0. Its `train.parquet`, `validation.parquet`, and `test.parquet` files contain telemetry only; per-run ground truth is stored separately. A more complete roadmap, including current limitations, lives in [ROADMAP.md](ROADMAP.md).
+The 1,000-run [OT Irregularity Training Dataset v0.3.0](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/releases/tag/dataset-v0.3.0) is published under CC BY 4.0; [v0.2.0](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/releases/tag/dataset-v0.2.0) remains available as a historical artifact. The merged `train.parquet`, `validation.parquet`, and `test.parquet` files contain telemetry only; per-run ground truth is stored separately. A more complete roadmap, including current limitations, lives in [ROADMAP.md](ROADMAP.md).
 
 The model input is `telemetry.parquet`; never pass `ground_truth.json` or `run_metadata.json` to a model submission. The evaluator reads predictions and ground truth in a separate process. Do not mount ground truth into inference containers.
 
 Optional protocol replay adapters are documented in [PROTOCOLS.md](PROTOCOLS.md). The core generator does not require protocol emulators.
+
+Current public-source calibration evidence and its limits are recorded in [CALIBRATION.md](CALIBRATION.md); process dynamics remain illustrative until independently calibrated.
 
 ## Repository guide
 
