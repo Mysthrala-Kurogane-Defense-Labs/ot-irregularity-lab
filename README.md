@@ -1,12 +1,12 @@
 # OT Irregularity Lab
 
-OT Irregularity Lab is an independent, open source toolkit for generating and replaying synthetic industrial telemetry with known, separately stored ground truth. It is model-agnostic: it contains no anomaly detector and makes no product, cloud, or customer-data integration a requirement.
+OT Irregularity Lab is an independent, open source preview toolkit for generating and replaying synthetic industrial telemetry with known, separately stored ground truth. It is model-agnostic: it contains no anomaly detector and makes no product, cloud, or customer-data integration a requirement.
 
 All generated data is synthetic, generated, and non-customer data. Process simulation runs without OpenPLC or protocol services. Apache-2.0 applies to the software; a public dataset release will declare its own data license and version.
 
-## First vertical slice
+## Preview status
 
-Python 3.12+, `uv`, NumPy, Polars, PyArrow, Pydantic, and PyYAML. It currently supports coupled process models for CNC, pump, compressor, and conveyor; seeded Parquet generation; independent `ground_truth.json`; run metadata; replay; and batch partition generation. Event evaluation and containerized challenge execution are planned interfaces, not implemented features in this first slice.
+Python 3.12+, `uv`, NumPy, Polars, PyArrow, Pydantic, and PyYAML. It supports coupled process models for CNC, pump, compressor, and conveyor; seeded Parquet generation; independent `ground_truth.json`; run metadata; replay; batch partitions; event/window evaluation; multi-model comparison; and ephemeral challenge orchestration. The Docker profile is implemented but has not been exercised against a live daemon in the current environment. Scenario fidelity and event metric calibration remain early-preview quality; no public dataset release is included.
 
 ```bash
 uv sync --extra dev
