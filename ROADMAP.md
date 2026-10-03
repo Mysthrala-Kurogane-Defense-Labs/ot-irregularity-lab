@@ -12,7 +12,7 @@ OT Irregularity Lab v0.2.0 delivers a randomized suite and one public 1,000-run 
 
 ## Evaluation and challenge
 
-- [x] Add reference fixtures covering full/partial overlap, duplicate alerts, fragmentation, no alerts, zero-observation assets, missing samples, threshold ties, and timestamp timezone validation; document metric semantics and limits. [ ] Extend hand-checked fixture coverage for class imbalance and additional mixed-asset edge cases.
+- [x] Add reference fixtures covering full/partial overlap, duplicate alerts, fragmentation, no alerts, zero-observation assets, missing samples, threshold ties, class imbalance, mixed assets, and timestamp timezone validation; use consistent half-open event/window intervals and document metric semantics and limits. Additional mixed-asset edge cases remain useful.
 - [ ] Evaluate the protocol with multiple independent external model commands and compare event and timestamp metrics. Scores must not feed back into simulator design or event parameters.
 - [x] Sample hidden challenge asset profiles, regimes, event types/counts, durations, and parameters from the versioned training-suite distributions at runtime. Resolved seed/scenario/parameters remain outside model input.
 - [x] Add a separate versioned challenge distribution (`suites/challenge-v0.1.yaml`), selectable with `ot-lab challenge --challenge-suite`, plus repeated-case artifact anti-leakage tests. Scenario IDs/versions, seed/hash, resolved parameters and evaluator-only observed timestamps are excluded from model-mounted inputs; the public distribution weights remain benchmark choices, not field prevalence.

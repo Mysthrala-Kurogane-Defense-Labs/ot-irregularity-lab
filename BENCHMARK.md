@@ -6,7 +6,7 @@ Submission contract: a process receives only `input.parquet` and writes `output.
 
 Metric definitions:
 
-- Event detection is binary per ground-truth event. Its coverage is the union duration of intersecting thresholded alert windows divided by the event's observed duration. An event is detected when coverage reaches the configured overlap threshold.
+- Event intervals and prediction windows are half-open `[start, end)`. Event detection is binary per ground-truth event. Its coverage is the union duration of intersecting thresholded alert windows divided by the event's observed duration. An event is detected when coverage reaches the configured overlap threshold. Timestamp metrics include a cadence point at the start and exclude one exactly at the end.
 - Event recall is detected events divided by all events. Event precision uses detected events as true positives and thresholded alert windows whose overlap with any event is below the threshold as false positives. This combines event and alert-window units; read it with `event_detection_rate` and false-positive rates.
 - `false_positive_windows` counts thresholded alert intervals that fail the overlap test. `false_positive_duration_s` counts their non-event portions after subtracting the union of ground-truth event intervals. Duplicate alerts can each contribute an FP window even if they cover the same non-event region.
 - Timestamp metrics score every expected sample on the cadence grid for every declared asset, including telemetry gaps. A sample is labeled positive when its timestamp lies in a ground-truth event interval. The highest covering alert score is used for that sample.

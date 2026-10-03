@@ -137,8 +137,8 @@ def _timestamp_scores(events: list[dict[str, Any]], predictions: pl.DataFrame, t
     labels: list[bool] = []
     for sample in samples:
         timestamp, asset_id = sample["timestamp"], sample["asset_id"]
-        labels.append(any(start <= timestamp <= end for start, end in event_intervals.get(asset_id, [])))
-        scores.append(max((score for start, end, score in pred_intervals.get(asset_id, []) if start <= timestamp <= end), default=0.0))
+        labels.append(any(start <= timestamp < end for start, end in event_intervals.get(asset_id, [])))
+        scores.append(max((score for start, end, score in pred_intervals.get(asset_id, []) if start <= timestamp < end), default=0.0))
     return scores, labels
 
 

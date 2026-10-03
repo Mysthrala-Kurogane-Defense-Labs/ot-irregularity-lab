@@ -8,7 +8,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from ot_lab.evaluation import evaluate
+from ot_lab.evaluation import _timestamp_scores, evaluate
 from ot_lab.models import Anomaly, AssetSpec, Scenario
 from ot_lab.process import ProcessState, regime_at, simulate_step
 from ot_lab.simulation import (
@@ -231,6 +231,48 @@ def test_full_horizon_prediction_gets_normal_asset_false_positives(tmp_path):
     assert result["false_positive_windows"] == 1
     assert result["window_precision"] < 0.5
     assert result["window_pr_auc"] < 1
+
+
+def test_benchmark_class_imbalance_and_mixed_assets_use_half_open_intervals(tmp_path):
+    scenario = Scenario.model_validate({
+        "scenario_id": "imbalanced-mixed-assets", "run_id": "imbalanced-mixed-1", "duration_s": 40,
+        "sampling_interval_ms": 1000,
+        "assets": [
+            {"asset_id": "CNC-01", "asset_class": "cnc"},
+            {"asset_id": "PUMP-01", "asset_class": "pump"},
+        ],
+        "anomalies": [{"type": "sensor_bias", "asset": "CNC-01", "start": 9, "duration": 11,
+                       "parameters": {"signal": "spindle_power_kw", "bias": 1.0}}],
+    })
+    run_dir = tmp_path / "run"
+    write_run(scenario, 29, run_dir)
+    truth = json.loads((run_dir / "ground_truth.json").read_text(encoding="utf-8"))
+    event = truth["events"][0]
+    event_start = event["observed_start"]
+    event_end = event["observed_end"]
+    predictions = tmp_path / "predictions.jsonl"
+    records = [
+        {"asset_id": "PUMP-01", "window_start": EPOCH.isoformat(),
+         "window_end": (EPOCH + timedelta(seconds=1)).isoformat(), "irregularity_score": 0.9},
+        {"asset_id": "CNC-01", "window_start": event_start,
+         "window_end": event_end, "irregularity_score": 0.8},
+    ]
+    predictions.write_text("".join(json.dumps(row) + "\n" for row in records), encoding="utf-8")
+    result = evaluate(run_dir / "ground_truth.json", predictions, tmp_path / "report",
+                      telemetry_path=run_dir / "telemetry.parquet")
+    assert result["event_detection_rate"] == 1
+    assert result["false_positive_windows"] == 1
+    # 10 positive samples out of 80 expected asset samples. One higher-scored
+    # false alarm precedes those positives, so average precision is 10/11.
+    assert result["window_pr_auc"] == pytest.approx(10 / 11)
+    _scores, labels = _timestamp_scores(
+        truth["events"], pl.read_ndjson(predictions), pl.read_parquet(run_dir / "telemetry.parquet"),
+        json.loads((run_dir / "run_metadata.json").read_text(encoding="utf-8")),
+    )
+    event_end_dt = datetime.fromisoformat(event_end)
+    timestamps = [EPOCH + timedelta(seconds=i) for i in range(40)]
+    assert sum(labels) == 10
+    assert not labels[timestamps.index(event_end_dt)]
 
 
 def test_benchmark_scores_missing_samples_on_expected_cadence(tmp_path):
