@@ -21,7 +21,9 @@ def test_metropt_analysis_records_aggregates_and_provenance_without_source_rows(
     assert result["mode_conditioned_signals"]["loaded"]["rows"] == 2
     assert result["mode_conditioned_signals"]["off_or_unloaded"]["rows"] == 2
     assert result["cadence_seconds"]["p50_s"] == 10
-    assert len(json.dumps(result)) < source.stat().st_size * 10
+    report_text = json.dumps(result)
+    assert len(report_text) < 4096
+    assert "2020-02-01 00:00:10,7,31,9,0,1" not in report_text
     output = write_metropt_analysis(source, tmp_path / "report.json")
     assert json.loads(output.read_text(encoding="utf-8"))["source"]["sha256"] == result["source"]["sha256"]
 
