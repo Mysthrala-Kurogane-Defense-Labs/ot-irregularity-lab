@@ -89,3 +89,29 @@ def test_randomized_challenge_sampling_covers_multiple_assets_and_event_families
     assert len({asset.asset_class for scenario in validated for asset in scenario.assets}) == 4
     assert len({event.type for scenario in validated for event in scenario.anomalies}) >= 12
     assert any(len(scenario.assets) > 1 for scenario in validated)
+
+
+def test_repeated_challenges_vary_without_persisting_resolved_case_details(tmp_path):
+    suite = yaml.safe_load(Path("suites/training-v0.2.yaml").read_text(encoding="utf-8"))
+    suite_path = tmp_path / "suite.yaml"
+    suite_path.write_text(yaml.safe_dump(suite, sort_keys=False), encoding="utf-8")
+    public_cases = []
+    for master_seed in range(20):
+        case_dir, truth_path = generate_challenge(
+            suite_path, tmp_path / f"challenge-{master_seed}", master_seed=master_seed
+        )
+        metadata = json.loads((case_dir / "run_metadata.json").read_text(encoding="utf-8"))
+        truth = json.loads(truth_path.read_text(encoding="utf-8"))
+        telemetry = pl.read_parquet(case_dir / "telemetry.parquet")
+        assert metadata["run_id"] == truth["run_id"] == "challenge-hidden"
+        assert "seed" not in metadata and "scenario_sha256" not in metadata
+        assert "scenario_id" not in metadata and "scenario_version" not in metadata
+        assert not (case_dir / "scenario.yaml").exists()
+        assert all("parameters" not in event for event in truth["events"])
+        assert "scenario_id" not in json.dumps(metadata) + json.dumps(truth)
+        assert "seed" not in json.dumps(metadata) + json.dumps(truth)
+        assert telemetry.get_column("run_id").unique().to_list() == ["challenge-hidden"]
+        public_cases.append((metadata["duration_s"], tuple(sorted(telemetry.get_column("asset_id").unique().to_list()))))
+
+    # Runtime samples should explore more than one public-profile outcome across fresh seeds.
+    assert len(set(public_cases)) > 1

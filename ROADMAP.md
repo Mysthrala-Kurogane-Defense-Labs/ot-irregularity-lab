@@ -15,7 +15,7 @@ OT Irregularity Lab v0.2.0 delivers a randomized suite and one public 1,000-run 
 - [x] Add reference fixtures covering full/partial overlap, duplicate alerts, fragmentation, no alerts, zero-observation assets, missing samples, threshold ties, and timestamp timezone validation; document metric semantics and limits. [ ] Extend hand-checked fixture coverage for class imbalance and additional mixed-asset edge cases.
 - [ ] Evaluate the protocol with multiple independent external model commands and compare event and timestamp metrics. Scores must not feed back into simulator design or event parameters.
 - [x] Sample hidden challenge asset profiles, regimes, event types/counts, durations, and parameters from the versioned training-suite distributions at runtime. Resolved seed/scenario/parameters remain outside model input.
-- [ ] Add explicit challenge-only distributions and anti-leakage checks across repeated cases; current challenge samples the public training suite distribution.
+- [x] Add repeated-case challenge anti-leakage checks: scenario identifiers/versions, seed, resolved scenario hash, and event parameters are excluded from challenge artifacts; a 20-seed regression confirms case variation. Challenge still samples the public training suite distribution.
 - [ ] Review container isolation against the intended threat model, including image network attempts, filesystem visibility, resource exhaustion, output validation, and host/runtime boundaries. Image pulls are disabled during evaluation, and timed-out containers are removed; a 64 MiB monitored output ceiling, bounded log retention, timeout, and cgroup limits are implemented. These are not a security certification or a hard filesystem quota. Local process execution is not a security sandbox.
 
 ## Optional plant and protocol adapters
@@ -25,7 +25,7 @@ OT Irregularity Lab v0.2.0 delivers a randomized suite and one public 1,000-run 
 
 ## Release and governance
 
-- [ ] Sign software tags and dataset manifests when an authorized signing key is available. v0.2.0 is published and CI-verified, but its tag is unsigned because the configured local SSH key rejected the passphrase.
+- [ ] Sign software tags and dataset manifests when an authorized signing key is available. Software and dataset tags through v0.3.1/v0.3.0 remain unsigned; the configured local SSH key rejected its passphrase. Revisit only when a usable authorized signing key is available.
 - [x] Publish OT Irregularity Dataset v0.3.0 with a separate CC BY 4.0 notice, deterministic archive, release checksum, per-run and partition hashes, and reproducible generation record; public download hash verified.
 - [ ] Preserve model-agnostic behavior and public definitions; never tune scenario behavior in response to a particular detector's score.
 

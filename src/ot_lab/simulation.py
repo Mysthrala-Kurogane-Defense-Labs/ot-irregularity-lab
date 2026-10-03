@@ -803,6 +803,8 @@ def generate_challenge(suite_path: Path, output: Path, master_seed: int | None =
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     metadata.pop("seed", None)
     metadata.pop("scenario_sha256", None)
+    metadata.pop("scenario_id", None)
+    metadata.pop("scenario_version", None)
     metadata_path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     truth_path = case_dir / "ground_truth.json"
     truth = json.loads(truth_path.read_text(encoding="utf-8"))

@@ -2,7 +2,7 @@
 
 ## Scope
 
-Continued the authorized platform goal after public commit `c84167a`. This local change set adds configurable missing-tag selection, bounded external submission execution, and an optional OPC UA telemetry replay adapter. No new release has been published.
+Continued the authorized platform goal after public commit `c84167a`. This work added configurable missing-tag selection, bounded external submission execution, an optional OPC UA telemetry replay adapter, and Docker timeout cleanup. Software v0.3.1 and dataset v0.3.0 are now public; see the linked releases and CI records below.
 
 ## Changes
 
@@ -17,8 +17,11 @@ Continued the authorized platform goal after public commit `c84167a`. This local
 - `uv lock --check`: passed.
 - `git diff --check`: passed.
 - Real Docker CLI smoke with local image, no network and a 1,024-byte output limit: passed; prediction file contained `{}`. Temporary image was removed. The test directory remains under `%TEMP%` because environment policy rejected recursive cleanup.
+- A real Docker timeout exercise confirmed that v0.3.1 force-removes its timed-out container; container inventory was empty afterward. Docker image pulls are disabled during evaluation (`--pull=never`).
+- Post-release challenge review discovered scenario identifier/version fields in ephemeral `run_metadata.json`. They have now been removed along with the seed and scenario hash; a regression generates 20 cases and checks hidden metadata and varied profiles.
 - OPC UA async server/client integration on localhost read the generated tag value and engineering properties successfully.
-- The previous public commit `c84167a` passed GitHub Actions run [37144939329](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/actions/runs/37144939329). This newer local change set has not yet been pushed or CI-verified.
+- Public v0.3.1 commit `5bf26b52000836ef19ce07fd43d3b14e38e952bf` passed GitHub Actions [37146693910](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/actions/runs/37146693910), both core and OPC UA jobs. Dataset archive public download SHA-256 was independently verified in [the dataset run record](2026-10-03-training-v0.3-1000.md).
+- Challenge metadata hardening added after v0.3.1: focused challenge tests, full suite, Ruff, lock check, and diff whitespace check pass locally. This follow-up has not yet been committed or CI-verified.
 
 ## Remaining
 
