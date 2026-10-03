@@ -104,15 +104,19 @@ def simulate_step(
     rng: np.random.Generator,
 ) -> dict[str, float]:
     """Advance one coupled process step; noise perturbs, never drives, the plant."""
-    target = REGIME_LOAD[regime]
+    parameters = asset.process_parameters
+    target = float(np.clip(REGIME_LOAD[regime] * parameters.get("load_scale", 1.0), 0.0, 1.0))
     # A first-order actuator response models process lag and loop settling.
-    alpha = 1.0 - np.exp(-dt / (3.0 if regime == "WARMUP" else 1.5))
+    actuator_tau = parameters.get("actuator_tau_s", 3.0 if regime == "WARMUP" else 1.5)
+    alpha = 1.0 - np.exp(-dt / actuator_tau)
+    noise_scale = parameters.get("sensor_noise_scale", 1.0)
+    thermal_scale = parameters.get("thermal_time_constant_scale", 1.0)
     state.load += (target - state.load) * alpha
-    noise = lambda scale: float(rng.normal(0.0, scale))
+    noise = lambda scale: float(rng.normal(0.0, scale * noise_scale))
     if asset.asset_class == "cnc":
         state.rpm += ((9000 * state.load) - state.rpm) * alpha
         power = 0.8 + 19 * state.load + noise(0.12)
-        state.temperature += (ambient_c + 60 * state.load - state.temperature) * (1 - np.exp(-dt / 90))
+        state.temperature += (ambient_c + 60 * state.load - state.temperature) * (1 - np.exp(-dt / (90 * thermal_scale)))
         vibration = 0.35 + 1.5 * state.load + 0.00004 * state.rpm + noise(0.08)
         result = {
             "spindle_rpm": _bounded(state.rpm + noise(8), 0, 12000),
@@ -129,7 +133,7 @@ def simulate_step(
         flow = 2500 * state.rpm / 3000 * (1 - 0.20 * state.load)
         pressure = max(0, 8 + 12 * (state.rpm / 3000) - 5 * state.load)
         current = 4 + 56 * state.load + 0.012 * pressure + noise(0.4)
-        state.temperature += (ambient_c + 45 * state.load - state.temperature) * (1 - np.exp(-dt / 100))
+        state.temperature += (ambient_c + 45 * state.load - state.temperature) * (1 - np.exp(-dt / (100 * thermal_scale)))
         result = {
             "rpm": _bounded(state.rpm + noise(5), 0, 3600),
             "motor_current_a": _bounded(current, 0, 100),
@@ -142,7 +146,7 @@ def simulate_step(
         if asset.process_profile == "metropt3_rail_apu":
             return _simulate_metropt3_rail_apu(asset, state, regime, dt, ambient_c, rng)
         load = state.load
-        state.temperature += (ambient_c + 80 * load - state.temperature) * (1 - np.exp(-dt / 120))
+        state.temperature += (ambient_c + 80 * load - state.temperature) * (1 - np.exp(-dt / (120 * thermal_scale)))
         discharge = ambient_c + 20 + 130 * load
         result = {
             "motor_current_a": _bounded(8 + 90 * load + noise(0.6), 0, 160),
@@ -154,7 +158,7 @@ def simulate_step(
         }
     else:
         load = state.load
-        state.temperature += (ambient_c + 48 * load - state.temperature) * (1 - np.exp(-dt / 100))
+        state.temperature += (ambient_c + 48 * load - state.temperature) * (1 - np.exp(-dt / (100 * thermal_scale)))
         speed = 2.2 * load
         result = {
             "motor_current_a": _bounded(3 + 55 * load + noise(0.4), 0, 100),

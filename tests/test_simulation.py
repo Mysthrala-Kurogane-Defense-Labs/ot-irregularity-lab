@@ -364,6 +364,35 @@ def test_training_suite_samples_reproducible_mixed_run_definitions():
     assert all(0 <= event["start"] < sampled_a["duration_s"] for event in sampled_a["anomalies"])
 
 
+def test_normal_suite_samples_reproducible_process_variation_ranges():
+    import yaml
+
+    from ot_lab.simulation import _resolve_ranges
+
+    suite = yaml.safe_load(Path("suites/normal-operation-v0.1.yaml").read_text(encoding="utf-8"))
+    generation = suite["generation"]
+    draws = []
+    for seed in range(30):
+        rng = np.random.default_rng(seed)
+        sampled = _generate_suite_scenario(suite["scenario"], generation, rng, f"normal-{seed}")
+        sampled = _resolve_ranges(sampled, rng)
+        validated = Scenario.model_validate(sampled)
+        assert validated.anomalies == []
+        parameters = [asset.process_parameters for asset in validated.assets]
+        assert parameters
+        assert all(0.85 <= item["load_scale"] <= 1.15 for item in parameters)
+        assert all(0.8 <= item["sensor_noise_scale"] <= 1.25 for item in parameters)
+        assert all(0.75 <= item["thermal_time_constant_scale"] <= 1.4 for item in parameters)
+        draws.append(parameters[0])
+    assert len({tuple(sorted(item.items())) for item in draws}) > 1
+    # A single seeded generator must drive both scenario-profile and range selection in batch.
+    same_rng = np.random.default_rng(11)
+    first = _resolve_ranges(_generate_suite_scenario(suite["scenario"], generation, same_rng, "repeat"), same_rng)
+    same_rng = np.random.default_rng(11)
+    second = _resolve_ranges(_generate_suite_scenario(suite["scenario"], generation, same_rng, "repeat"), same_rng)
+    assert first == second
+
+
 def test_randomized_training_dataset_has_mixed_faults_and_auditable_partitions(tmp_path):
     import yaml
 

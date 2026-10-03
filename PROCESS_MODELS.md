@@ -13,4 +13,6 @@ These are low-cost engineering relationships for reproducible dataset generation
 
 The MetroPT profile's mode-conditioned current and pressure envelopes are descriptive. The load mapping, thermal time constant, discharge-temperature and vibration equations remain clearly identified simulator assumptions; this profile is not a digital twin.
 
+Generic process assets support reproducible per-asset overrides for `load_scale`, `actuator_tau_s`, `thermal_time_constant_scale`, and `sensor_noise_scale`. The normal-operation suite samples these in declared ranges so otherwise normal runs include distinct production setpoints, response speeds, and sensor variability. The numeric ranges are a benchmark design choice, not inferred industrial population distributions.
+
 OFF, IDLE, WARMUP, LOW_LOAD, NORMAL_LOAD, HIGH_LOAD, COOLDOWN, and MAINTENANCE are scenario regime options. The baseline schedule has startup, load transitions/recipe changes, and shutdown. Add validated shift schedules and environmental profiles in the next phase.

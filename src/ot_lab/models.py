@@ -59,15 +59,15 @@ class AssetSpec(BaseModel):
     @classmethod
     def validate_process_parameters(cls, value: dict[str, float], info: Any) -> dict[str, float]:
         profile = info.data.get("process_profile", "generic")
-        allowed = {
+        rail_apu_parameters = {
             "load_tau_s", "current_loaded_base_a", "current_loaded_span_a", "current_off_a",
             "current_noise_a", "pressure_loaded_min_bar", "pressure_loaded_span_bar",
             "pressure_off_bar", "pressure_noise_bar", "oil_temperature_rise_c",
             "oil_thermal_tau_s", "discharge_temperature_rise_c", "discharge_noise_c",
             "vibration_base_mm_s", "vibration_load_gain_mm_s", "vibration_noise_mm_s",
         }
-        if profile != "metropt3_rail_apu" and value:
-            raise ValueError("process_parameters are supported only by configurable non-generic profiles")
+        generic_parameters = {"load_scale", "actuator_tau_s", "thermal_time_constant_scale", "sensor_noise_scale"}
+        allowed = rail_apu_parameters if profile == "metropt3_rail_apu" else generic_parameters
         unknown = set(value) - allowed
         if unknown:
             raise ValueError(f"unknown process parameters: {', '.join(sorted(unknown))}")
@@ -75,6 +75,8 @@ class AssetSpec(BaseModel):
             raise ValueError("process parameter values must be finite numbers")
         for key, parameter in value.items():
             if key.endswith("tau_s") and parameter <= 0:
+                raise ValueError(f"{key} must be positive")
+            if key.endswith("_scale") and parameter <= 0:
                 raise ValueError(f"{key} must be positive")
             if key.endswith(("noise_a", "noise_bar", "noise_c", "noise_mm_s")) and parameter < 0:
                 raise ValueError(f"{key} must be non-negative")

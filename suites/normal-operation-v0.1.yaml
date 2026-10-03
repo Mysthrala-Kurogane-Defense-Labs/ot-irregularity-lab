@@ -27,12 +27,12 @@ generation:
     ambient_temperature_drift_c: {min: -5, max: 5}
     expose_operating_regime: {choices: [true, false]}
   asset_profiles:
-    - {profile_id: cnc, weight: 2, assets: [{asset_id: CNC-01, asset_class: cnc}]}
-    - {profile_id: pump, weight: 2, assets: [{asset_id: PUMP-01, asset_class: pump}]}
-    - {profile_id: compressor, weight: 2, assets: [{asset_id: COMPRESSOR-01, asset_class: compressor}]}
-    - {profile_id: conveyor, weight: 2, assets: [{asset_id: CONVEYOR-01, asset_class: conveyor}]}
-    - {profile_id: machining-cell, weight: 1, assets: [{asset_id: CNC-01, asset_class: cnc}, {asset_id: PUMP-01, asset_class: pump}]}
-    - {profile_id: mixed-plant, weight: 1, assets: [{asset_id: CNC-01, asset_class: cnc}, {asset_id: PUMP-01, asset_class: pump}, {asset_id: COMPRESSOR-01, asset_class: compressor}, {asset_id: CONVEYOR-01, asset_class: conveyor}]}
+    - {profile_id: cnc, weight: 2, assets: [{asset_id: CNC-01, asset_class: cnc, process_parameters: {load_scale: {min: 0.85, max: 1.15}, sensor_noise_scale: {min: 0.8, max: 1.25}, thermal_time_constant_scale: {min: 0.75, max: 1.4}}}]}
+    - {profile_id: pump, weight: 2, assets: [{asset_id: PUMP-01, asset_class: pump, process_parameters: {load_scale: {min: 0.85, max: 1.15}, sensor_noise_scale: {min: 0.8, max: 1.25}, thermal_time_constant_scale: {min: 0.75, max: 1.4}}}]}
+    - {profile_id: compressor, weight: 2, assets: [{asset_id: COMPRESSOR-01, asset_class: compressor, process_parameters: {load_scale: {min: 0.85, max: 1.15}, sensor_noise_scale: {min: 0.8, max: 1.25}, thermal_time_constant_scale: {min: 0.75, max: 1.4}}}]}
+    - {profile_id: conveyor, weight: 2, assets: [{asset_id: CONVEYOR-01, asset_class: conveyor, process_parameters: {load_scale: {min: 0.85, max: 1.15}, sensor_noise_scale: {min: 0.8, max: 1.25}, thermal_time_constant_scale: {min: 0.75, max: 1.4}}}]}
+    - {profile_id: machining-cell, weight: 1, assets: [{asset_id: CNC-01, asset_class: cnc, process_parameters: {load_scale: {min: 0.85, max: 1.15}, sensor_noise_scale: {min: 0.8, max: 1.25}, thermal_time_constant_scale: {min: 0.75, max: 1.4}}}, {asset_id: PUMP-01, asset_class: pump, process_parameters: {load_scale: {min: 0.85, max: 1.15}, sensor_noise_scale: {min: 0.8, max: 1.25}, thermal_time_constant_scale: {min: 0.75, max: 1.4}}}]}
+    - {profile_id: mixed-plant, weight: 1, assets: [{asset_id: CNC-01, asset_class: cnc, process_parameters: {load_scale: {min: 0.85, max: 1.15}, sensor_noise_scale: {min: 0.8, max: 1.25}, thermal_time_constant_scale: {min: 0.75, max: 1.4}}}, {asset_id: PUMP-01, asset_class: pump, process_parameters: {load_scale: {min: 0.85, max: 1.15}, sensor_noise_scale: {min: 0.8, max: 1.25}, thermal_time_constant_scale: {min: 0.75, max: 1.4}}}, {asset_id: COMPRESSOR-01, asset_class: compressor, process_parameters: {load_scale: {min: 0.85, max: 1.15}, sensor_noise_scale: {min: 0.8, max: 1.25}, thermal_time_constant_scale: {min: 0.75, max: 1.4}}}, {asset_id: CONVEYOR-01, asset_class: conveyor, process_parameters: {load_scale: {min: 0.85, max: 1.15}, sensor_noise_scale: {min: 0.8, max: 1.25}, thermal_time_constant_scale: {min: 0.75, max: 1.4}}}]}
   regime_profiles:
     - {profile_id: cold-start-and-shift, weight: 2, shift_pattern: ["OFF", WARMUP, LOW_LOAD, NORMAL_LOAD, HIGH_LOAD, NORMAL_LOAD, COOLDOWN, "OFF"]}
     - {profile_id: variable-production, weight: 3, shift_pattern: [IDLE, LOW_LOAD, HIGH_LOAD, LOW_LOAD, NORMAL_LOAD]}

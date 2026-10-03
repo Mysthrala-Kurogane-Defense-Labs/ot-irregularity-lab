@@ -24,6 +24,13 @@ EPOCH = datetime(2025, 1, 1, tzinfo=UTC)
 def _resolve_ranges(scenario_data: dict[str, Any], rng: np.random.Generator) -> dict[str, Any]:
     """Replace declared numeric ranges with seeded values and validate their bounds."""
     resolved = json.loads(json.dumps(scenario_data))
+    for asset in resolved.get("assets", []):
+        for key, value in list(asset.get("process_parameters", {}).items()):
+            if isinstance(value, dict) and set(value) == {"min", "max"}:
+                low, high = float(value["min"]), float(value["max"])
+                if not np.isfinite([low, high]).all() or low > high:
+                    raise ValueError(f"invalid numeric range for process parameter {key}")
+                asset["process_parameters"][key] = float(rng.uniform(low, high))
     for anomaly in resolved.get("anomalies", []):
         for key, value in list(anomaly.get("parameters", {}).items()):
             if isinstance(value, dict) and set(value) == {"min", "max"}:
