@@ -89,24 +89,32 @@ def _affect(
             affected.add(name)
     elif kind == "sensor_drift":
         names = [str(p["signal"])] if "signal" in p else list(signals)
+        if any(name not in signals for name in names):
+            raise ValueError("sensor_drift references a signal absent from the target asset")
         for name in names:
             if name in signals:
                 signals[name] += float(p.get("rate_per_minute", 0.5)) * (seconds - event.start) / 60
                 affected.add(name)
     elif kind == "sensor_bias":
         names = [str(p["signal"])] if "signal" in p else list(signals)
+        if any(name not in signals for name in names):
+            raise ValueError("sensor_bias references a signal absent from the target asset")
         for name in names:
             if name in signals:
                 signals[name] += float(p.get("bias", 1.0))
                 affected.add(name)
     elif kind == "sudden_spike":
         names = [str(p["signal"])] if "signal" in p else [next(iter(signals))]
+        if any(name not in signals for name in names):
+            raise ValueError("sudden_spike references a signal absent from the target asset")
         for name in names:
             if name in signals:
                 signals[name] += float(p.get("magnitude", 5.0))
                 affected.add(name)
     elif kind == "sensor_stuck":
         names = [str(p["signal"])] if "signal" in p else [next(iter(signals))]
+        if any(name not in signals for name in names):
+            raise ValueError("sensor_stuck references a signal absent from the target asset")
         state = states.get("__sensor_stuck", ProcessState())
         for name in names:
             if name in signals:
@@ -117,6 +125,8 @@ def _affect(
         quality = "UNCERTAIN"
     elif kind == "single_signal_loss":
         names = [str(p["signal"])] if "signal" in p else [next(iter(signals))]
+        if any(name not in signals for name in names):
+            raise ValueError("single_signal_loss references a signal absent from the target asset")
         for name in names:
             signals.pop(name, None)
             affected.add(name)

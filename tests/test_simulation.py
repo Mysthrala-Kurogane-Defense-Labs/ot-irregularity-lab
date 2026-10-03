@@ -120,6 +120,21 @@ def test_missing_telemetry_uses_configured_loss_and_records_event_interval():
     assert truth["events"][0]["observed_end"]
 
 
+@pytest.mark.parametrize("loss_pct", [5, 10, 25, 50, 100])
+def test_missing_telemetry_accepts_required_loss_rates(loss_pct):
+    scenario = fixture_scenario(anomaly={
+        "type": "missing_telemetry", "asset": "ASSET-01", "start": 5,
+        "duration": 15, "parameters": {"loss_pct": loss_pct},
+    })
+    telemetry, _, _ = simulate(scenario, 17)
+    # 100% loss means no rows in the event, lower percentages retain some rows.
+    event_rows = telemetry.filter(
+        (pl.col("timestamp") >= pl.datetime(2025, 1, 1, 0, 0, 6, time_zone="UTC")) &
+        (pl.col("timestamp") < pl.datetime(2025, 1, 1, 0, 0, 20, time_zone="UTC"))
+    ).height
+    assert (event_rows == 0) if loss_pct == 100 else (event_rows > 0)
+
+
 @pytest.mark.parametrize("asset_class", ["cnc", "pump", "compressor", "conveyor"])
 def test_process_simulation_is_reproducible_for_every_asset(asset_class):
     scenario = fixture_scenario(asset_class)
