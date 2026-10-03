@@ -286,7 +286,10 @@ def test_normal_only_benchmark_reports_pr_auc_as_undefined(tmp_path):
     result = evaluate(run_dir / "ground_truth.json", predictions, tmp_path / "report",
                       telemetry_path=run_dir / "telemetry.parquet")
     assert result["event_type_metrics"] == {}
-    assert result["event_detection_rate"] == 0
+    assert result["precision"] is None
+    assert result["recall"] is None
+    assert result["f1"] is None
+    assert result["event_detection_rate"] is None
     assert result["false_positive_windows"] == 1
     assert result["window_pr_auc"] is None
     assert result["pr_auc"] is None

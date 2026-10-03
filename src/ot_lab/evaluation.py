@@ -83,9 +83,11 @@ def _event_detection_metrics(events: list[dict[str, Any]], predictions: pl.DataF
             tp_windows += 1
         else:
             fp += 1
-    precision = tp / (tp + fp) if tp + fp else 0.0
-    recall = tp / (tp + fn) if tp + fn else 0.0
-    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    precision = tp / (tp + fp) if tp + fp else (None if not events else 0.0)
+    if not events:
+        precision = None
+    recall = tp / (tp + fn) if tp + fn else (None if not events else 0.0)
+    f1 = 2 * precision * recall / (precision + recall) if precision and recall else (None if not events else 0.0)
     exposure_hours = max(exposure_hours, 1e-9)
     latencies = [e["time_to_first_detection_s"] for e in matched_events if e["detected"] and e["time_to_first_detection_s"] is not None]
     event_types = sorted({event["type"] for event in events})
@@ -215,10 +217,13 @@ def evaluate(ground_truth_path: Path, predictions_path: Path, output_dir: Path, 
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "metrics.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     event_rows = "".join(f"<tr><td>{e['event_id']}</td><td>{e['asset_id']}</td><td>{e['type']}</td><td>{e['detected']}</td><td>{e['coverage']:.1%}</td></tr>" for e in result["events"])
+    event_precision = f"{result['precision']:.3f}" if result["precision"] is not None else "n/a"
+    event_recall = f"{result['recall']:.3f}" if result["recall"] is not None else "n/a"
+    event_f1 = f"{result['f1']:.3f}" if result["f1"] is not None else "n/a"
     html = f"""<!doctype html><html lang="en"><meta charset="utf-8"><title>OT Irregularity Lab benchmark</title>
 <style>body{{font:16px system-ui;max-width:900px;margin:3rem auto;color:#16202a}}table{{border-collapse:collapse}}td,th{{padding:.6rem 1rem;border:1px solid #ccd}}</style>
 <h1>Benchmark report</h1><p>Run: {result['run_id']} | threshold {threshold:.3f} | overlap {overlap:.1%}</p>
-<ul><li>Precision: {result['precision']:.3f}</li><li>Recall: {result['recall']:.3f}</li><li>F1: {result['f1']:.3f}</li>
+<ul><li>Precision: {event_precision}</li><li>Recall: {event_recall}</li><li>F1: {event_f1}</li>
 <li>PR-AUC: {result['pr_auc'] if result['pr_auc'] is not None else 'n/a'}</li><li>False positive windows: {result['false_positive_windows']}</li>
 <li>Event coverage: {result['mean_event_coverage'] if result['mean_event_coverage'] is not None else 'n/a'}</li></ul>
 <h2>Events</h2><table><thead><tr><th>Event</th><th>Asset</th><th>Type</th><th>Detected</th><th>Coverage</th></tr></thead><tbody>{event_rows}</tbody></table></html>"""
