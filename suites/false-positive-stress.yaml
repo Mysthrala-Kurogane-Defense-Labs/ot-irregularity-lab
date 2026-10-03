@@ -1,0 +1,20 @@
+suite_id: false-positive-stress-v0.1
+partitions:
+  train: 0.7
+  validation: 0.15
+  test: 0.15
+scenario:
+  scenario_id: normal-false-positive-stress
+  scenario_version: 1.0.0
+  run_id: base
+  duration_s: 300
+  sampling_interval_ms: 1000
+  sampling_jitter_ms: 25
+  ambient_temperature_c: 18
+  assets:
+    - asset_id: CNC-01
+      asset_class: cnc
+      regimes: [WARMUP, LOW_LOAD, NORMAL_LOAD, HIGH_LOAD, COOLDOWN, MAINTENANCE]
+    - asset_id: PUMP-01
+      asset_class: pump
+      regimes: [WARMUP, LOW_LOAD, NORMAL_LOAD, HIGH_LOAD, COOLDOWN]

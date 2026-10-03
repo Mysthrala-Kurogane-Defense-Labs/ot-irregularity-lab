@@ -1,0 +1,15 @@
+scenario_id: normal-false-positive-stress
+scenario_version: 1.0.0
+run_id: false-positive-stress-0001
+description: Normal startup, several load changes, and ambient drift without injected anomalies.
+duration_s: 3600
+sampling_interval_ms: 1000
+sampling_jitter_ms: 20
+ambient_temperature_c: 18
+assets:
+  - asset_id: CNC-01
+    asset_class: cnc
+    regimes: [WARMUP, LOW_LOAD, NORMAL_LOAD, HIGH_LOAD, COOLDOWN, MAINTENANCE]
+  - asset_id: PUMP-01
+    asset_class: pump
+    regimes: [WARMUP, LOW_LOAD, NORMAL_LOAD, HIGH_LOAD, COOLDOWN]

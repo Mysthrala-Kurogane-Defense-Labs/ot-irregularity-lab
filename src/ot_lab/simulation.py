@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +16,7 @@ from . import SCHEMA_VERSION, __version__
 from .models import GroundTruthEvent, Scenario
 from .process import ProcessState, regime_at, signal_metadata, simulate_step
 
-EPOCH = datetime(2025, 1, 1, tzinfo=timezone.utc)
+EPOCH = datetime(2025, 1, 1, tzinfo=UTC)
 
 EVENT_SIGNALS = {
     "sensor_drift": ["*"], "sudden_spike": ["*"],
@@ -122,7 +122,9 @@ def _affect(
             affected.add(name)
     elif kind in ("missing_telemetry", "asset_communication_loss"):
         loss_pct = float(p.get("loss_pct", 100 if kind == "asset_communication_loss" else 25))
-        if loss_pct >= 100 or kind == "asset_communication_loss":
+        if not 0 <= loss_pct <= 100:
+            raise ValueError("loss_pct must be within 0..100")
+        if loss_pct >= 100:
             affected.update(signals)
             signals.clear()
         else:
@@ -169,13 +171,11 @@ def simulate(scenario: Scenario, seed: int) -> tuple[pl.DataFrame, dict[str, Any
         asset = next((item for item in scenario.assets if item.asset_id == anomaly.asset), None)
         if asset is None:
             raise ValueError(f"anomaly references unknown asset {anomaly.asset!r}")
-        meta = signal_metadata(asset.asset_class)
-        signals = [s for s in meta if s in EVENT_SIGNALS[anomaly.type] or "*" in EVENT_SIGNALS[anomaly.type]]
         events.append(GroundTruthEvent(
             event_id=f"evt-{index}", asset_id=anomaly.asset, type=anomaly.type,
             start=origin + timedelta(seconds=anomaly.start),
             end=origin + timedelta(seconds=anomaly.start + anomaly.duration),
-            affected_signals=signals, severity=anomaly.severity, parameters=anomaly.parameters,
+            affected_signals=[], severity=anomaly.severity, parameters=anomaly.parameters,
         ).model_dump(mode="json"))
     step_ms = scenario.sampling_interval_ms
     n_steps = int(scenario.duration_s * 1000 / step_ms)
@@ -196,7 +196,14 @@ def simulate(scenario: Scenario, seed: int) -> tuple[pl.DataFrame, dict[str, Any
             for anomaly in scenario.anomalies:
                 if anomaly.asset == asset.asset_id and _event_active(anomaly, seconds):
                     active_events.append(anomaly)
+                    before = set(signals)
                     signals, affected, quality = _affect(anomaly, signals, seconds, states, asset.asset_class)
+                    event_index = scenario.anomalies.index(anomaly) + 1
+                    event_record = next(e for e in events if e["event_id"] == f"evt-{event_index}")
+                    event_record["affected_signals"] = sorted(set(event_record["affected_signals"]) | affected)
+                    if anomaly.type == "quality_degradation":
+                        for name in before & set(signals):
+                            quality_by_signal[name] = quality
                     for name in affected:
                         if name in quality_by_signal and quality != "GOOD":
                             quality_by_signal[name] = quality
@@ -244,7 +251,7 @@ def simulate(scenario: Scenario, seed: int) -> tuple[pl.DataFrame, dict[str, Any
     return telemetry, ground_truth, metadata
 
 
-def write_run(scenario: Scenario, seed: int, output: Path, csv: bool = False, jsonl: bool = False) -> dict[str, Any]:
+def write_run(scenario: Scenario, seed: int, output: Path, csv: bool = False, jsonl: bool = False, persist_scenario: bool = True) -> dict[str, Any]:
     output.mkdir(parents=True, exist_ok=True)
     telemetry, ground_truth, metadata = simulate(scenario, seed)
     telemetry.write_parquet(output / "telemetry.parquet", compression="zstd", statistics=True)
@@ -254,6 +261,8 @@ def write_run(scenario: Scenario, seed: int, output: Path, csv: bool = False, js
         telemetry.write_csv(output / "telemetry.csv")
     if jsonl:
         telemetry.write_ndjson(output / "telemetry.jsonl")
+    if persist_scenario:
+        (output / "scenario.yaml").write_text(yaml.safe_dump(scenario.model_dump(mode="json"), sort_keys=False), encoding="utf-8")
     return metadata
 
 
@@ -279,23 +288,80 @@ def batch(suite_path: Path, runs: int, output: Path, seed: int) -> None:
         counts[key] += runs - sum(counts.values())
     seed_rng = np.random.default_rng(seed)
     manifest_runs = []
+    class_distribution = {"normal": 0, "anomalous": 0}
+    asset_distribution: dict[str, int] = {}
+    observation_total = 0
     for partition, count in counts.items():
         for index in range(count):
             run_seed = int(seed_rng.integers(0, 2**63, dtype=np.int64))
-            scenario = base.model_copy(update={"run_id": f"{partition}-{index+1:05d}"})
+            scenario_data = base.model_dump(mode="json")
+            scenario_data["run_id"] = f"{partition}-{index+1:05d}"
+            local_rng = np.random.default_rng(run_seed)
+            for anomaly in scenario_data.get("anomalies", []):
+                for key, value in list(anomaly.get("parameters", {}).items()):
+                    if isinstance(value, dict) and set(value) == {"min", "max"}:
+                        low, high = float(value["min"]), float(value["max"])
+                        if low > high:
+                            raise ValueError(f"range min exceeds max for parameter {key}")
+                        anomaly["parameters"][key] = float(local_rng.uniform(low, high))
+                for field in ("start", "duration", "severity"):
+                    value = anomaly.get(field)
+                    if isinstance(value, dict) and set(value) == {"min", "max"}:
+                        low, high = float(value["min"]), float(value["max"])
+                        if low > high:
+                            raise ValueError(f"range min exceeds max for {field}")
+                        anomaly[field] = float(local_rng.uniform(low, high))
+            scenario = Scenario.model_validate(scenario_data)
             run_dir = output / partition / scenario.run_id
             write_run(scenario, run_seed, run_dir)
-            (run_dir / "scenario.yaml").write_text(yaml.safe_dump(scenario.model_dump(mode="json"), sort_keys=False), encoding="utf-8")
             digest = hashlib.sha256((run_dir / "telemetry.parquet").read_bytes()).hexdigest()
             manifest_runs.append({"partition": partition, "run_id": scenario.run_id, "seed": run_seed, "sha256": digest})
-    asset_distribution: dict[str, int] = {}
-    for asset in base.assets:
-        asset_distribution[asset.asset_class] = asset_distribution.get(asset.asset_class, 0) + runs
+            run_meta = json.loads((run_dir / "run_metadata.json").read_text(encoding="utf-8"))
+            manifest_runs[-1]["observation_count"] = run_meta["observation_count"]
+            manifest_runs[-1]["scenario_sha256"] = run_meta["scenario_sha256"]
+            observation_total += run_meta["observation_count"]
+            class_distribution["anomalous" if scenario.anomalies else "normal"] += 1
+            for asset in scenario.assets:
+                asset_distribution[asset.asset_class] = asset_distribution.get(asset.asset_class, 0) + 1
     manifest = {
         "dataset_id": output.name, "simulator_version": __version__, "schema_version": SCHEMA_VERSION,
-        "run_count": runs, "partition_counts": counts, "runs": manifest_runs,
-        "class_distribution": {"normal": runs if not base.anomalies else 0, "anomalous": runs if base.anomalies else 0},
+        "run_count": runs, "observation_count": observation_total,
+        "partition_counts": counts, "runs": manifest_runs,
+        "class_distribution": class_distribution,
         "asset_distribution": asset_distribution,
         "synthetic": True, "generated": True, "customer_data": False,
     }
     (output / "dataset_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+
+def generate_challenge(suite_path: Path, output: Path, master_seed: int | None = None) -> tuple[Path, Path]:
+    """Generate an ephemeral challenge case; master seed is OS-random unless explicitly supplied for tests."""
+    suite = yaml.safe_load(suite_path.read_text(encoding="utf-8"))
+    seed = int(np.random.SeedSequence().generate_state(1, dtype=np.uint64)[0]) if master_seed is None else master_seed
+    case_dir = output / "case"
+    scenario_data = suite["scenario"]
+    scenario_data["run_id"] = f"challenge-{hashlib.sha256(str(seed).encode()).hexdigest()[:12]}"
+    rng = np.random.default_rng(seed)
+    for anomaly in scenario_data.get("anomalies", []):
+        for key, value in list(anomaly.get("parameters", {}).items()):
+            if isinstance(value, dict) and set(value) == {"min", "max"}:
+                anomaly["parameters"][key] = float(rng.uniform(float(value["min"]), float(value["max"])))
+        for field in ("start", "duration", "severity"):
+            value = anomaly.get(field)
+            if isinstance(value, dict) and set(value) == {"min", "max"}:
+                anomaly[field] = float(rng.uniform(float(value["min"]), float(value["max"])))
+    scenario = Scenario.model_validate(scenario_data)
+    write_run(scenario, seed, case_dir, persist_scenario=False)
+    # Hidden seed and resolved scenario are not persisted in a challenge case.
+    metadata_path = case_dir / "run_metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata.pop("seed", None)
+    metadata.pop("scenario_sha256", None)
+    metadata_path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    truth_path = case_dir / "ground_truth.json"
+    truth = json.loads(truth_path.read_text(encoding="utf-8"))
+    for event in truth["events"]:
+        event.pop("parameters", None)
+    truth_path.write_text(json.dumps(truth, indent=2) + "\n", encoding="utf-8")
+    # The local evaluator receives truth only after the model has exited; seed is held in memory, not written.
+    return case_dir, case_dir / "ground_truth.json"

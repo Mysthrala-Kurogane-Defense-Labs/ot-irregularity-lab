@@ -21,6 +21,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.3", "matplotlib>=3.9"]
 
+[dependency-groups]
+lint = ["ruff>=0.11"]
+
 [project.scripts]
 ot-lab = "ot_lab.cli:main"
 

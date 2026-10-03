@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -67,6 +67,16 @@ class Scenario(BaseModel):
             raise ValueError("asset_id values must be unique within a scenario")
         return value
 
+    @field_validator("anomalies")
+    @classmethod
+    def anomalies_fit_run(cls, value: list[Anomaly], info: Any) -> list[Anomaly]:
+        duration = info.data.get("duration_s")
+        if duration is not None:
+            for anomaly in value:
+                if anomaly.start + anomaly.duration > duration:
+                    raise ValueError(f"anomaly {anomaly.type} ends after scenario duration")
+        return value
+
 
 class GroundTruthEvent(BaseModel):
     event_id: str
@@ -77,4 +87,3 @@ class GroundTruthEvent(BaseModel):
     affected_signals: list[str]
     severity: float
     parameters: dict[str, float | str | bool] = Field(default_factory=dict)
-

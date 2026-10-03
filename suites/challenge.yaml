@@ -1,0 +1,20 @@
+suite_id: challenge-v0.1
+scenario:
+  scenario_id: hidden-bearing-challenge
+  scenario_version: 1.0.0
+  run_id: hidden-base
+  duration_s: 300
+  sampling_interval_ms: 1000
+  sampling_jitter_ms: 15
+  assets:
+    - asset_id: CNC-01
+      asset_class: cnc
+  anomalies:
+    - type: bearing_degradation
+      asset: CNC-01
+      start: {min: 90, max: 180}
+      duration: {min: 60, max: 120}
+      severity: {min: 0.2, max: 0.7}
+      parameters:
+        vibration_gain: {min: 0.05, max: 0.3}
+        temperature_gain: {min: 0.02, max: 0.12}

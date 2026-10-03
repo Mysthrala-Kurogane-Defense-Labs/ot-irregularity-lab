@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 import numpy as np
 
 from .models import AssetSpec, Regime
-
 
 SIGNAL_META: dict[str, dict[str, tuple[str, float, float]]] = {
     "cnc": {
@@ -96,8 +94,6 @@ def simulate_step(
     alpha = 1.0 - np.exp(-dt / (3.0 if regime == "WARMUP" else 1.5))
     state.load += (target - state.load) * alpha
     noise = lambda scale: float(rng.normal(0.0, scale))
-    cooling = 0.07
-
     if asset.asset_class == "cnc":
         state.rpm += ((9000 * state.load) - state.rpm) * alpha
         power = 0.8 + 19 * state.load + noise(0.12)
