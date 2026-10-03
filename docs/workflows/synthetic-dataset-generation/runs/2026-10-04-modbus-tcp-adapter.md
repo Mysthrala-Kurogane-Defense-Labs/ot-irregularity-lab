@@ -17,7 +17,7 @@ Implement an independent, optional Modbus/TCP replay adapter for canonical telem
 - Windows Python 3.12: `uv run ruff check src tests` passed; `uv run pytest` passed (130 tests); `uv lock --check` and `git diff --check` passed.
 - Linux WSL Python 3.12 with `dev`, `opcua`, and `modbus` extras: full `pytest -q` passed (130 tests).
 - Integration test connected with a PyModbus client, decoded the value `12.5` from two input registers, and confirmed that a holding-register write returns an error. The service bound to loopback.
-- The optional CI job is added but its GitHub Actions result is pending publication.
+- GitHub Actions run [37157484312](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/actions/runs/37157484312) passed all three jobs (core, OPC UA, Modbus) in 38 seconds. The first run emitted two cache-key collision warnings between the optional jobs; the workflow now uses a matrix-specific cache suffix to avoid them.
 
 ## Evidence limits
 
