@@ -1,5 +1,6 @@
 import json
 from datetime import UTC, datetime
+from itertools import pairwise
 from pathlib import Path
 
 import numpy as np
@@ -9,7 +10,14 @@ import pytest
 from ot_lab.evaluation import evaluate
 from ot_lab.models import AssetSpec, Scenario
 from ot_lab.process import ProcessState, regime_at, simulate_step
-from ot_lab.simulation import EPOCH, batch, replay, simulate, write_run
+from ot_lab.simulation import (
+    EPOCH,
+    _generate_suite_scenario,
+    batch,
+    replay,
+    simulate,
+    write_run,
+)
 from ot_lab.submission import run_docker_submission, run_submission
 
 
@@ -133,6 +141,7 @@ def test_event_benchmark_accepts_declared_asset_with_zero_observations(tmp_path)
     })
     run_dir = tmp_path / "run"
     write_run(scenario, 5, run_dir)
+    assert pl.read_parquet(run_dir / "telemetry.parquet").columns
     predictions = tmp_path / "predictions.jsonl"
     predictions.write_text(json.dumps({
         "asset_id": "P-1", "window_start": "2025-01-01T00:00:00+00:00",
@@ -230,6 +239,71 @@ def test_shift_pattern_changes_regime_deterministically():
     assert regime_at(9000, 10000, regimes, regimes) == "HIGH_LOAD"
     assert regime_at(3, 10, ["OFF"]) == "OFF"
     assert regime_at(3, 10, ["MAINTENANCE"]) == "MAINTENANCE"
+
+
+def test_shift_pattern_falls_back_to_supported_asset_regimes():
+    assert regime_at(50, 100, ["LOW_LOAD", "NORMAL_LOAD"], ["MAINTENANCE"]) == "NORMAL_LOAD"
+
+
+def test_ground_truth_records_actual_regime_intervals_even_when_plc_hides_them():
+    telemetry, truth, _ = simulate(fixture_scenario(), 14)
+    assert telemetry.get_column("operating_regime").null_count() == telemetry.height
+    intervals = truth["operating_regimes"]
+    assert intervals and {row["asset_id"] for row in intervals} == {"ASSET-01"}
+    assert all(row["start"] <= row["end"] for row in intervals)
+    assert intervals[0]["start"] == EPOCH.isoformat()
+    assert intervals[-1]["end"] == (EPOCH.replace(second=30)).isoformat()
+
+
+def test_training_suite_samples_reproducible_mixed_run_definitions():
+    import yaml
+
+    suite = yaml.safe_load(Path("suites/training-v0.2.yaml").read_text(encoding="utf-8"))
+    sampled_a = _generate_suite_scenario(suite["scenario"], suite["generation"], np.random.default_rng(87), "same-run")
+    sampled_b = _generate_suite_scenario(suite["scenario"], suite["generation"], np.random.default_rng(87), "same-run")
+    assert sampled_a == sampled_b
+    assert Scenario.model_validate(sampled_a)
+    assert sampled_a["duration_s"] in range(300, 601)
+    assert sampled_a["sampling_interval_ms"] in {500, 1000}
+    assert len(sampled_a["assets"]) in {1, 2, 4}
+    assert all(0 <= event["start"] < sampled_a["duration_s"] for event in sampled_a["anomalies"])
+
+
+def test_randomized_training_dataset_has_mixed_faults_and_auditable_partitions(tmp_path):
+    import yaml
+
+    suite_data = yaml.safe_load(Path("suites/training-v0.2.yaml").read_text(encoding="utf-8"))
+    suite_data["generation"]["vary"]["duration_s"] = {"min": 60, "max": 60}
+    suite_path = tmp_path / "training-suite.yaml"
+    suite_path.write_text(yaml.safe_dump(suite_data, sort_keys=False), encoding="utf-8")
+    output = tmp_path / "randomized-dataset"
+    batch(suite_path, 300, output, seed=20261003)
+
+    manifest = json.loads((output / "dataset_manifest.json").read_text(encoding="utf-8"))
+    assert (output / "suite.yaml").read_text(encoding="utf-8") == suite_path.read_text(encoding="utf-8")
+    assert manifest["class_distribution"]["normal"] > 0
+    assert manifest["class_distribution"]["anomalous"] > 0
+    assert manifest["data_license"] == "CC-BY-4.0"
+    assert manifest["generator_argv"][-1] == str(output)
+    assert len(manifest["asset_distribution"]) == 4
+    assert len(manifest["event_distribution"]) >= 12
+    assert len(manifest["regime_episode_distribution"]) >= 4
+    assert manifest["master_seed"] == 20261003
+    assert len({run["seed"] for run in manifest["runs"]}) == 300
+    assert len({run["scenario_sha256"] for run in manifest["runs"]}) == 300
+    for run in manifest["runs"]:
+        truth = json.loads((output / run["partition"] / run["run_id"] / "ground_truth.json").read_text(encoding="utf-8"))
+        assert all(event["affected_signals"] for event in truth["events"])
+        assert truth["ground_truth_schema_version"] == "1.1.0"
+        by_asset = {}
+        for event in truth["events"]:
+            by_asset.setdefault(event["asset_id"], []).append(event)
+        for events in by_asset.values():
+            ordered = sorted(events, key=lambda event: event["start"])
+            assert all(left["end"] <= right["start"] for left, right in pairwise(ordered))
+    for partition, counts in manifest["class_distribution_by_partition"].items():
+        assert counts["normal"] > 0 and counts["anomalous"] > 0
+        assert manifest["partition_counts"][partition] == sum(counts.values())
 
 
 def test_false_positive_stress_suite_reaches_warmup_high_load_maintenance_and_cooldown():
@@ -372,8 +446,18 @@ def test_batch_rejects_persistent_challenge_partition(tmp_path):
     suite.write_text("""partitions: {train: 0.5, validation: 0.25, test: 0.15, challenge: 0.1}
 scenario: {scenario_id: x, assets: [{asset_id: A, asset_class: pump}]}
 """, encoding="utf-8")
+    output = tmp_path / "out"
     with pytest.raises(ValueError, match="ephemeral challenge"):
-        batch(suite, 10, tmp_path / "out", seed=1)
+        batch(suite, 10, output, seed=1)
+    assert not output.exists()
+
+
+def test_batch_refuses_existing_dataset_output_to_prevent_stale_runs(tmp_path):
+    output = tmp_path / "dataset"
+    output.mkdir()
+    (output / "old-run").mkdir()
+    with pytest.raises(FileExistsError, match="must not already exist"):
+        batch(Path("suites/training-v0.2.yaml"), 2, output, seed=42)
 
 
 def test_range_resolution_rejects_invalid_challenge_bounds(tmp_path):

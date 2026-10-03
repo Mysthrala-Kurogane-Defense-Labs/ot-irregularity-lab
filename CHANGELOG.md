@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0 — 2026-10-03
+
+- Added a weighted suite generator for mixed normal/fault datasets with variable assets, regimes, run duration, cadence, jitter, ambient conditions, event onset, duration, severity, and parameters.
+- Added all 15 supported fault families to `suites/training-v0.2.yaml`, with compatible asset classes and explicit numeric/choice distributions.
+- Added `ot-lab dataset create`, dataset suite/runtime/version metadata, per-partition class/event distributions, regime distributions, and fail-closed handling of non-empty output paths.
+- Added actual operating-regime intervals to independent ground truth (ground-truth schema v1.1.0), including runs where the PLC hides regime tags.
+- Prevented randomized multi-event scenarios from placing simultaneous events on one asset; unsupported requested regimes now fall back to a regime available on the asset.
+- Generated and published a 1,000-run training dataset with all 15 event families, eight observed regimes, train/validation/test partitions, separate ground truth, and CC BY 4.0 terms.
+- Documented source dataset analysis and generator sampling limits. The release does not redistribute SWaT, TEP, SKAB, or other third-party traces.
+
 ## 0.1.0 — 2026-10-03
 
 - Completed the v0.1 acceptance path for normal CNC/PUMP generation, anomaly runs, independent ground truth, replay, seeded train/validation/test batches, and model-agnostic evaluation.

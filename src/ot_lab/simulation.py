@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import platform
+import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -12,7 +14,7 @@ import numpy as np
 import polars as pl
 import yaml
 
-from . import SCHEMA_VERSION, __version__
+from . import GROUND_TRUTH_SCHEMA_VERSION, SCHEMA_VERSION, __version__
 from .models import GroundTruthEvent, Scenario
 from .process import ProcessState, regime_at, signal_metadata, simulate_step
 
@@ -37,6 +39,115 @@ def _resolve_ranges(scenario_data: dict[str, Any], rng: np.random.Generator) -> 
                     raise ValueError(f"invalid numeric range for {field}")
                 anomaly[field] = float(rng.uniform(low, high))
     return resolved
+
+
+def _draw(spec: Any, rng: np.random.Generator) -> Any:
+    """Draw a reproducible scalar from a literal, numeric range, or choice specification."""
+    if isinstance(spec, dict):
+        if set(spec) == {"min", "max"}:
+            low, high = spec["min"], spec["max"]
+            if isinstance(low, int) and isinstance(high, int):
+                if low > high:
+                    raise ValueError("range min exceeds max")
+                return int(rng.integers(low, high + 1))
+            low, high = float(low), float(high)
+            if not np.isfinite([low, high]).all() or low > high:
+                raise ValueError("range min exceeds max or contains a non-finite value")
+            return float(rng.uniform(low, high))
+        if set(spec) == {"choices"}:
+            if not spec["choices"]:
+                raise ValueError("choice specification must not be empty")
+            return spec["choices"][int(rng.integers(0, len(spec["choices"]))) ]
+        raise ValueError("sample specifications must use exactly min/max or choices")
+    return spec
+
+
+def _weighted_choice(items: list[dict[str, Any]], rng: np.random.Generator, label: str) -> dict[str, Any]:
+    if not items:
+        raise ValueError(f"generation requires at least one {label}")
+    weights = np.asarray([float(item.get("weight", 1.0)) for item in items])
+    if not np.isfinite(weights).all() or np.any(weights < 0) or weights.sum() <= 0:
+        raise ValueError(f"{label} weights must be finite, non-negative, and not all zero")
+    return items[int(rng.choice(len(items), p=weights / weights.sum()))]
+
+
+def _draw_parameter(spec: Any, rng: np.random.Generator, asset_class: str) -> Any:
+    if isinstance(spec, dict) and set(spec) == {"signal_class"}:
+        inventory = signal_metadata(asset_class)
+        candidates = [name for name, metadata in inventory.items() if spec["signal_class"] == "any" or metadata[0] == spec["signal_class"]]
+        if not candidates:
+            raise ValueError(f"no {spec['signal_class']} signal exists for {asset_class}")
+        return candidates[int(rng.integers(0, len(candidates)))]
+    return _draw(spec, rng)
+
+
+def _generate_suite_scenario(base: dict[str, Any], generation: dict[str, Any], rng: np.random.Generator, run_id: str) -> dict[str, Any]:
+    """Sample a complete run definition from an explicit, versioned suite distribution."""
+    data = json.loads(json.dumps(base))
+    data["run_id"] = run_id
+    probability = float(generation.get("anomaly_probability", 0.0))
+    if not 0 <= probability <= 1:
+        raise ValueError("anomaly_probability must be within 0..1")
+
+    for key, spec in generation.get("vary", {}).items():
+        data[key] = _draw(spec, rng)
+
+    profiles = generation.get("asset_profiles", [])
+    if profiles:
+        profile = _weighted_choice(profiles, rng, "asset profiles")
+        data["assets"] = profile["assets"]
+
+    regime_profiles = generation.get("regime_profiles", [])
+    if regime_profiles:
+        regime = _weighted_choice(regime_profiles, rng, "regime profiles")
+        data["shift_pattern"] = regime["shift_pattern"]
+
+    data["anomalies"] = []
+    if generation.get("anomaly_templates") and rng.random() < probability:
+        count = int(_draw(generation.get("anomaly_count", {"min": 1, "max": 1}), rng))
+        available_classes = {asset["asset_class"] for asset in data["assets"]}
+        templates = [item for item in generation["anomaly_templates"] if available_classes & set(item.get("asset_classes", available_classes))]
+        if count < 1 or count > len(templates):
+            raise ValueError("anomaly_count must be between 1 and the number of compatible distinct templates")
+        selected: list[dict[str, Any]] = []
+        remaining = list(templates)
+        while len(selected) < count:
+            item = _weighted_choice(remaining, rng, "anomaly templates")
+            selected.append(item)
+            remaining.remove(item)
+        duration = int(data["duration_s"])
+        for item in selected:
+            candidates = [asset for asset in data["assets"] if asset["asset_class"] in item.get("asset_classes", [asset["asset_class"] for asset in data["assets"]])]
+            if not candidates:
+                raise ValueError(f"no compatible asset for anomaly template {item['type']}")
+            fraction = float(_draw(item.get("duration_fraction", {"min": 0.08, "max": 0.2}), rng))
+            if not 0 < fraction <= 1:
+                raise ValueError("duration_fraction must be within (0, 1]")
+            event_duration = max(1, min(duration, round(duration * fraction)))
+            event_start = None
+            asset = None
+            for _ in range(256):
+                candidate_asset = candidates[int(rng.integers(0, len(candidates)))]
+                start_fraction = float(_draw(item.get("start_fraction", {"min": 0.1, "max": 0.7}), rng))
+                if not 0 <= start_fraction <= 1:
+                    raise ValueError("start_fraction must be within 0..1")
+                candidate_start = max(0, min(duration - event_duration, round(duration * start_fraction)))
+                candidate_end = candidate_start + event_duration
+                occupied = [event for event in data["anomalies"] if event["asset"] == candidate_asset["asset_id"]]
+                if all(candidate_end <= event["start"] or candidate_start >= event["start"] + event["duration"] for event in occupied):
+                    asset, event_start = candidate_asset, candidate_start
+                    break
+            if asset is None or event_start is None:
+                raise ValueError("could not place non-overlapping sampled events within the run")
+            parameters = {key: _draw_parameter(value, rng, asset["asset_class"]) for key, value in item.get("parameters", {}).items()}
+            if any(isinstance(value, dict) for value in parameters.values()):
+                raise ValueError(f"unresolved parameter specification in template {item['type']}")
+            data["anomalies"].append({
+                "type": item["type"], "asset": asset["asset_id"], "start": event_start,
+                "duration": event_duration, "severity": float(_draw(item.get("severity", {"min": 0.2, "max": 0.8}), rng)),
+                "parameters": parameters,
+            })
+    return data
 
 def read_scenario(path: Path) -> Scenario:
     with path.open("r", encoding="utf-8") as stream:
@@ -82,7 +193,7 @@ def _affect(
     fraction = min(1.0, max(0.0, (seconds - event.start) / max(event.duration, 1)))
     p = event.parameters
     def pick(*names: str) -> list[str]:
-        return [name for name in signals if name in names or any(name in n for n in names)]
+        return [name for name in signals if name in names or any(fragment in name for fragment in names)]
     if kind == "bearing_degradation":
         vib = pick("vibration_mm_s", "spindle_vibration_mm_s")
         temp = pick("motor_temperature_c", "spindle_temperature_c")
@@ -228,6 +339,8 @@ def simulate(scenario: Scenario, seed: int) -> tuple[pl.DataFrame, dict[str, Any
     origin = EPOCH
     rows: list[dict[str, Any]] = []
     events: list[dict[str, Any]] = []
+    regime_intervals: list[dict[str, str]] = []
+    active_regimes: dict[str, dict[str, str]] = {}
     jitter = scenario.sampling_jitter_ms
     for index, anomaly in enumerate(scenario.anomalies, 1):
         asset = next((item for item in scenario.assets if item.asset_id == anomaly.asset), None)
@@ -252,6 +365,16 @@ def simulate(scenario: Scenario, seed: int) -> tuple[pl.DataFrame, dict[str, Any
         for asset in scenario.assets:
             state = states[asset.asset_id]
             regime = regime_at(seconds, scenario.duration_s, asset.regimes, scenario.shift_pattern)
+            regime_timestamp = origin + timedelta(seconds=seconds)
+            active_regime = active_regimes.get(asset.asset_id)
+            if active_regime is None or active_regime["regime"] != regime:
+                if active_regime is not None:
+                    active_regime["end"] = regime_timestamp.isoformat()
+                active_regime = {"asset_id": asset.asset_id, "regime": regime, "start": regime_timestamp.isoformat(), "end": regime_timestamp.isoformat()}
+                active_regimes[asset.asset_id] = active_regime
+                regime_intervals.append(active_regime)
+            else:
+                active_regime["end"] = regime_timestamp.isoformat()
             ambient = scenario.ambient_temperature_c + scenario.ambient_temperature_drift_c * seconds / max(scenario.duration_s, 1)
             signals = simulate_step(asset, state, regime, step_ms / 1000, ambient, rng)
             quality_by_signal = {name: "GOOD" for name in signals}
@@ -295,16 +418,31 @@ def simulate(scenario: Scenario, seed: int) -> tuple[pl.DataFrame, dict[str, Any
                 event_record = next(e for e in events if e["event_id"] == f"evt-{event_index}")
                 event_record.setdefault("observed_start", timestamp.isoformat())
                 event_record["observed_end"] = timestamp.isoformat()
-    telemetry = pl.DataFrame(rows, schema_overrides={
-        "timestamp": pl.Datetime("ms", "UTC"), "value": pl.Float64,
+    run_end = (origin + timedelta(seconds=scenario.duration_s)).isoformat()
+    for active_regime in active_regimes.values():
+        active_regime["end"] = run_end
+    telemetry = pl.DataFrame(rows, schema={
+        "schema_version": pl.String, "run_id": pl.String,
+        "timestamp": pl.Datetime("ms", "UTC"), "asset_id": pl.String,
+        "asset_class": pl.String, "tag_id": pl.String, "signal_class": pl.String,
+        "value": pl.Float64, "unit": pl.String, "quality": pl.String,
+        "sampling_interval_ms": pl.Int64, "operating_regime": pl.String,
         "engineering_min": pl.Float64, "engineering_max": pl.Float64,
+        "protocol": pl.String, "device_id": pl.String, "site_id": pl.String,
+        "zone_id": pl.String,
     })
-    ground_truth = {"run_id": scenario.run_id, "events": events}
+    ground_truth = {
+        "ground_truth_schema_version": GROUND_TRUTH_SCHEMA_VERSION,
+        "run_id": scenario.run_id,
+        "events": events,
+        "operating_regimes": regime_intervals,
+    }
     scenario_canonical = json.dumps(scenario.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
     metadata = {
         "run_id": scenario.run_id, "scenario_id": scenario.scenario_id,
         "scenario_version": scenario.scenario_version, "seed": seed,
         "simulator_version": __version__, "schema_version": SCHEMA_VERSION,
+        "ground_truth_schema_version": GROUND_TRUTH_SCHEMA_VERSION,
         "scenario_sha256": hashlib.sha256(scenario_canonical.encode()).hexdigest(),
         "started_at": origin.isoformat(), "duration_s": scenario.duration_s,
         "sampling_interval_ms": step_ms, "observation_count": telemetry.height,
@@ -343,8 +481,22 @@ def replay(run_dir: Path, output: Path | None = None) -> Path:
 def batch(suite_path: Path, runs: int, output: Path, seed: int) -> None:
     if runs <= 0:
         raise ValueError("runs must be positive")
+    if output.exists():
+        raise FileExistsError(f"dataset output path must not already exist: {output}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f".{output.name}.tmp-", dir=output.parent) as staging_root:
+        staging_output = Path(staging_root) / output.name
+        _batch_to_directory(suite_path, runs, staging_output, seed, command_output=output)
+        staging_output.replace(output)
+
+
+def _batch_to_directory(suite_path: Path, runs: int, output: Path, seed: int, command_output: Path | None = None) -> None:
+    if runs <= 0:
+        raise ValueError("runs must be positive")
+    output.mkdir(parents=True, exist_ok=True)
     suite = yaml.safe_load(suite_path.read_text(encoding="utf-8"))
     base = suite["scenario"]
+    generation = suite.get("generation", {})
     partitions = suite.get("partitions", {"train": 0.7, "validation": 0.15, "test": 0.15})
     if "challenge" in {name.lower() for name in partitions}:
         raise ValueError("challenge partitions must use ephemeral challenge generation")
@@ -361,8 +513,12 @@ def batch(suite_path: Path, runs: int, output: Path, seed: int) -> None:
     used_seeds: set[int] = set()
     manifest_runs = []
     class_distribution = {"normal": 0, "anomalous": 0}
+    partition_class_distribution = {partition: {"normal": 0, "anomalous": 0} for partition in partitions}
     asset_distribution: dict[str, int] = {}
     event_distribution: dict[str, int] = {}
+    event_distribution_by_partition = {partition: {} for partition in partitions}
+    regime_distribution: dict[str, int] = {}
+    regime_duration_s: dict[str, float] = {}
     observation_total = 0
     for partition, count in counts.items():
         for index in range(count):
@@ -370,11 +526,15 @@ def batch(suite_path: Path, runs: int, output: Path, seed: int) -> None:
             while run_seed in used_seeds:
                 run_seed = int(seed_rng.integers(0, 2**63, dtype=np.int64))
             used_seeds.add(run_seed)
-            scenario_data = json.loads(json.dumps(base))
-            scenario_data["run_id"] = f"{partition}-{index+1:05d}"
             local_rng = np.random.default_rng(run_seed)
+            run_id = f"{partition}-{index+1:05d}"
+            if generation:
+                scenario_data = _generate_suite_scenario(base, generation, local_rng, run_id)
+            else:
+                scenario_data = json.loads(json.dumps(base))
+                scenario_data["run_id"] = run_id
             scenario_data = _resolve_ranges(scenario_data, local_rng)
-            scenario_data["run_id"] = f"{partition}-{index+1:05d}"
+            scenario_data["run_id"] = run_id
             scenario = Scenario.model_validate(resolve_profiles(scenario_data))
             run_dir = output / partition / scenario.run_id
             write_run(scenario, run_seed, run_dir)
@@ -384,6 +544,9 @@ def batch(suite_path: Path, runs: int, output: Path, seed: int) -> None:
                 "partition": partition, "run_id": scenario.run_id, "seed": run_seed,
                 "telemetry_sha256": digest, "scenario_id": scenario.scenario_id,
                 "scenario_version": scenario.scenario_version,
+                "asset_ids": [asset.asset_id for asset in scenario.assets],
+                "asset_classes": [asset.asset_class for asset in scenario.assets],
+                "configured_shift_pattern": scenario.shift_pattern,
             })
             run_meta = json.loads((run_dir / "run_metadata.json").read_text(encoding="utf-8"))
             manifest_runs[-1]["observation_count"] = run_meta["observation_count"]
@@ -391,21 +554,64 @@ def batch(suite_path: Path, runs: int, output: Path, seed: int) -> None:
             manifest_runs[-1]["ground_truth_sha256"] = hashlib.sha256((run_dir / "ground_truth.json").read_bytes()).hexdigest()
             manifest_runs[-1]["metadata_sha256"] = hashlib.sha256((run_dir / "run_metadata.json").read_bytes()).hexdigest()
             observation_total += run_meta["observation_count"]
-            class_distribution["anomalous" if scenario.anomalies else "normal"] += 1
+            sample_class = "anomalous" if scenario.anomalies else "normal"
+            class_distribution[sample_class] += 1
+            partition_class_distribution[partition][sample_class] += 1
             for anomaly in scenario.anomalies:
                 event_distribution[anomaly.type] = event_distribution.get(anomaly.type, 0) + 1
+                partition_events = event_distribution_by_partition[partition]
+                partition_events[anomaly.type] = partition_events.get(anomaly.type, 0) + 1
             for asset in scenario.assets:
                 asset_distribution[asset.asset_class] = asset_distribution.get(asset.asset_class, 0) + 1
+            truth = json.loads((run_dir / "ground_truth.json").read_text(encoding="utf-8"))
+            for interval in truth.get("operating_regimes", []):
+                regime = interval["regime"]
+                regime_distribution[regime] = regime_distribution.get(regime, 0) + 1
+                elapsed = (datetime.fromisoformat(interval["end"]) - datetime.fromisoformat(interval["start"])).total_seconds()
+                regime_duration_s[regime] = regime_duration_s.get(regime, 0.0) + max(0.0, elapsed)
+    partition_files: dict[str, dict[str, Any]] = {}
+    for partition in partitions:
+        partition_runs = [run for run in manifest_runs if run["partition"] == partition]
+        if partition_runs:
+            partition_path = output / f"{partition}.parquet"
+            telemetry_paths = [str(output / partition / run["run_id"] / "telemetry.parquet") for run in partition_runs]
+            pl.scan_parquet(telemetry_paths).sink_parquet(partition_path, compression="zstd", statistics=True)
+            partition_files[partition] = {
+                "path": partition_path.name,
+                "sha256": hashlib.sha256(partition_path.read_bytes()).hexdigest(),
+                "observation_count": sum(run["observation_count"] for run in partition_runs),
+            }
+        else:
+            partition_files[partition] = {"path": None, "sha256": None, "observation_count": 0}
+    lockfile = Path(__file__).resolve().parents[2] / "uv.lock"
     manifest = {
-        "dataset_id": output.name, "simulator_version": __version__, "schema_version": SCHEMA_VERSION,
+        "manifest_version": "1.0.0",
+        "dataset_id": output.name, "suite_id": suite.get("suite_id", suite_path.stem),
+        "suite_version": suite.get("suite_version", "1.0.0"),
+        "data_license": suite.get("data_license"),
+        "suite_sha256": hashlib.sha256(suite_path.read_bytes()).hexdigest(),
+        "simulator_version": __version__, "schema_version": SCHEMA_VERSION,
+        "ground_truth_schema_version": GROUND_TRUTH_SCHEMA_VERSION, "master_seed": seed,
+        "generator_argv": [
+            "uv", "run", "ot-lab", "dataset", "create", "--suite", str(suite_path),
+            "--runs", str(runs), "--seed", str(seed), "--output", str(command_output or output),
+        ],
+        "uv_lock_sha256": hashlib.sha256(lockfile.read_bytes()).hexdigest() if lockfile.is_file() else None,
+        "runtime": {"python": platform.python_version(), "numpy": np.__version__, "polars": pl.__version__},
         "run_count": runs, "observation_count": observation_total,
         "partition_counts": counts, "runs": manifest_runs,
+        "partition_files": partition_files,
         "class_distribution": class_distribution,
+        "class_distribution_by_partition": partition_class_distribution,
         "asset_distribution": asset_distribution,
         "event_distribution": event_distribution,
+        "event_distribution_by_partition": event_distribution_by_partition,
+        "regime_episode_distribution": regime_distribution,
+        "regime_duration_s": regime_duration_s,
         "synthetic": True, "generated": True, "customer_data": False,
     }
     (output / "dataset_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    (output / "suite.yaml").write_bytes(suite_path.read_bytes())
 
 
 def generate_challenge(suite_path: Path, output: Path, master_seed: int | None = None) -> tuple[Path, Path]:

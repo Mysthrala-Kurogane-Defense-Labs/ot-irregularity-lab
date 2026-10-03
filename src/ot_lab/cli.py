@@ -30,6 +30,13 @@ def main() -> None:
     batch_cmd.add_argument("--runs", type=int, required=True)
     batch_cmd.add_argument("--seed", type=int, default=42)
     batch_cmd.add_argument("--output", type=Path, required=True)
+    dataset_cmd = commands.add_parser("dataset", help="create a seeded dataset from a generation suite")
+    dataset_subcommands = dataset_cmd.add_subparsers(dest="dataset_command", required=True)
+    create_cmd = dataset_subcommands.add_parser("create", help="generate train/validation/test runs and a manifest")
+    create_cmd.add_argument("--suite", type=Path, required=True)
+    create_cmd.add_argument("--runs", type=int, required=True)
+    create_cmd.add_argument("--seed", type=int, default=42)
+    create_cmd.add_argument("--output", type=Path, required=True)
     benchmark_cmd = commands.add_parser("benchmark", help="score model predictions for a generated run")
     benchmark_cmd.add_argument("--run", type=Path, required=True, help="run directory containing ground_truth.json")
     benchmark_cmd.add_argument("--predictions", type=Path, required=True, help="JSONL model output")
@@ -65,7 +72,7 @@ def main() -> None:
         print(json.dumps(metadata, indent=2))
     elif args.command == "replay":
         print(replay(args.run_dir, args.output))
-    elif args.command == "batch":
+    elif args.command in {"batch", "dataset"}:
         if args.runs <= 0:
             parser.error("--runs must be positive")
         batch(args.suite, args.runs, args.output, args.seed)

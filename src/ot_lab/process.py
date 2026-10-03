@@ -71,7 +71,14 @@ def regime_at(t: float, duration: float, regimes: list[Regime], shift_pattern: l
             return "COOLDOWN"
         operational_fraction = (fraction - 0.08) / 0.85
         phase = min(int(operational_fraction * len(shift_pattern)), len(shift_pattern) - 1)
-        return shift_pattern[phase]
+        requested = shift_pattern[phase]
+        if requested in regimes:
+            return requested
+        if "NORMAL_LOAD" in regimes:
+            return "NORMAL_LOAD"
+        if not available:
+            return regimes[0] if regimes else "IDLE"
+        return available[phase % len(available)]
     if not available:
         return regimes[0] if regimes else "IDLE"
     if fraction < 0.08:

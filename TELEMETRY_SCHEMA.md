@@ -1,5 +1,7 @@
 # Canonical telemetry schema
 
+Telemetry schema is versioned independently from software and ground truth (`schema_version: 1.0.0`). Ground truth JSON carries its own `ground_truth_schema_version` so changes to labels do not imply telemetry contract changes.
+
 Schema version `1.0.0`. One row represents one observed tag value, not one asset snapshot.
 
 | Field | Type | Meaning |
