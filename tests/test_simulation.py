@@ -20,7 +20,7 @@ from ot_lab.simulation import (
     simulate,
     write_run,
 )
-from ot_lab.submission import run_docker_submission, run_submission
+from ot_lab.submission import _run_bounded, run_docker_submission, run_submission
 
 
 def fixture_scenario(asset_class="cnc", anomaly=None):
@@ -1011,6 +1011,40 @@ def test_run_submission_enforces_timeout(tmp_path):
     command = "python -c \"import time; time.sleep(10)\""
     with pytest.raises(TimeoutError, match="timeout of 1 seconds"):
         run_submission(command, run_dir, tmp_path / "predictions.jsonl", timeout_s=1)
+
+
+def test_bounded_runner_checks_the_actual_writable_output_path(tmp_path, monkeypatch):
+    output = tmp_path / "mounted-output.jsonl"
+    output.write_bytes(b"x" * 101)
+
+    class RunningProcess:
+        def __init__(self, *_args, **_kwargs):
+            self.returncode = None
+            self.stdout = io.BytesIO()
+            self.stderr = io.BytesIO()
+            self.killed = False
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self):
+            return self.returncode
+
+        def kill(self):
+            self.killed = True
+            self.returncode = -9
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    process = RunningProcess()
+    monkeypatch.setattr("ot_lab.submission.subprocess.Popen", lambda *_args, **_kwargs: process)
+    with pytest.raises(ValueError, match="exceeds 100 bytes"):
+        _run_bounded(["model"], cwd=tmp_path, env={}, timeout_s=10, max_output_bytes=100, monitored_output=output)
+    assert process.killed
 
 
 def test_docker_submission_passes_only_minimal_environment(tmp_path, monkeypatch):

@@ -116,7 +116,7 @@ def run_docker_submission(image: str, run_dir: Path, output: Path, timeout_s: in
             image,
         ]
         try:
-            _run_bounded(args, cwd=sandbox, env={**os.environ, "OT_LAB_OUTPUT": str(output_path)}, timeout_s=timeout_s, max_output_bytes=max_output_bytes, monitored_output=output_path)
+            _run_bounded(args, cwd=sandbox, env={**os.environ, "OT_LAB_OUTPUT": str(output_path)}, timeout_s=timeout_s, max_output_bytes=max_output_bytes, monitored_output=mounted_output)
         finally:
             if cid_path.is_file():
                 container_id = cid_path.read_text(encoding="utf-8").strip()
