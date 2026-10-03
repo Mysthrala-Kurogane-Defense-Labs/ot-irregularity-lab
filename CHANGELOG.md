@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.0-alpha.2
+
+- Verified Docker submission and ephemeral challenge flows locally with a smoke container.
+- Container wrapper uses a minimal environment, no network, read-only root, dropped capabilities, and separated telemetry/output mounts.
+- Added regression checks for container flags and documented preview validation limits.
+
 ## 0.1.0-alpha.1
 
 - Initial independent synthetic telemetry generator for CNC, pump, compressor, and conveyor process models.
