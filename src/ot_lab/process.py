@@ -8,7 +8,7 @@ import numpy as np
 
 from .models import AssetSpec, Regime
 
-SIGNAL_META: dict[str, dict[str, tuple[str, float, float]]] = {
+SIGNAL_META: dict[str, dict[str, tuple[str, str, float, float]]] = {
     "cnc": {
         "spindle_rpm": ("rotational_speed", "rpm", 0, 12000),
         "spindle_power_kw": ("power", "kW", 0, 30),
@@ -63,11 +63,17 @@ class ProcessState:
 def regime_at(t: float, duration: float, regimes: list[Regime], shift_pattern: list[Regime] | None = None) -> Regime:
     """Select repeatable operating phases, including warmup and cooldown."""
     available = [r for r in regimes if r != "OFF" and r != "MAINTENANCE"]
-    if not available:
-        return "IDLE"
-    if shift_pattern:
-        return shift_pattern[min(int(t // 3600) % len(shift_pattern), len(shift_pattern) - 1)]
     fraction = t / max(duration, 1)
+    if shift_pattern:
+        if fraction < 0.08 and "WARMUP" in regimes:
+            return "WARMUP"
+        if fraction > 0.93 and "COOLDOWN" in regimes:
+            return "COOLDOWN"
+        operational_fraction = (fraction - 0.08) / 0.85
+        phase = min(int(operational_fraction * len(shift_pattern)), len(shift_pattern) - 1)
+        return shift_pattern[phase]
+    if not available:
+        return regimes[0] if regimes else "IDLE"
     if fraction < 0.08:
         return "WARMUP" if "WARMUP" in available else available[0]
     if fraction > 0.93:

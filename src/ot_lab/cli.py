@@ -68,12 +68,10 @@ def main() -> None:
     elif args.command == "batch":
         if args.runs <= 0:
             parser.error("--runs must be positive")
-        if args.suite.stem.lower() == "challenge":
-            parser.error("challenge data must use the ephemeral `challenge` command, not a persistent batch suite")
         batch(args.suite, args.runs, args.output, args.seed)
         print(args.output / "dataset_manifest.json")
     elif args.command == "benchmark":
-        result = evaluate(args.run / "ground_truth.json", args.predictions, args.output, args.threshold, args.overlap, args.run / "telemetry.parquet")
+        result = evaluate(args.run / "ground_truth.json", args.predictions, args.output, args.threshold, args.overlap, args.run / "telemetry.parquet", args.run / "run_metadata.json")
         print(json.dumps({key: value for key, value in result.items() if key != "events"}, indent=2))
     elif args.command == "run-model":
         print(run_submission(args.model_command, args.run, args.output, args.timeout))
@@ -87,7 +85,7 @@ def main() -> None:
             predictions = Path(temp) / "predictions.jsonl"
             run_docker_submission(args.image, case_dir, predictions, args.timeout)
             result_dir = Path(temp) / "result"
-            result = evaluate(truth_path, predictions, result_dir, telemetry_path=case_dir / "telemetry.parquet")
+            result = evaluate(truth_path, predictions, result_dir, telemetry_path=case_dir / "telemetry.parquet", metadata_path=case_dir / "run_metadata.json")
             # Persist only scored output; temporary telemetry, predictions, truth and seed are discarded.
             (args.output / "metrics.json").write_text((result_dir / "metrics.json").read_text(encoding="utf-8"), encoding="utf-8")
             (args.output / "report.html").write_text((result_dir / "report.html").read_text(encoding="utf-8"), encoding="utf-8")
@@ -96,7 +94,7 @@ def main() -> None:
         rows = []
         for prediction in args.predictions:
             model_output = args.output / prediction.stem
-            metrics = evaluate(args.run / "ground_truth.json", prediction, model_output, args.threshold, args.overlap, args.run / "telemetry.parquet")
+            metrics = evaluate(args.run / "ground_truth.json", prediction, model_output, args.threshold, args.overlap, args.run / "telemetry.parquet", args.run / "run_metadata.json")
             rows.append({"model": prediction.stem, "precision": metrics["precision"], "recall": metrics["recall"], "f1": metrics["f1"], "pr_auc": metrics["pr_auc"], "false_positives_per_asset_hour": metrics["false_positives_per_asset_hour"], "event_detection_rate": metrics["event_detection_rate"], "percentage_of_event_detected": metrics["percentage_of_event_detected"]})
         args.output.mkdir(parents=True, exist_ok=True)
         (args.output / "comparison.json").write_text(json.dumps(rows, indent=2) + "\n", encoding="utf-8")

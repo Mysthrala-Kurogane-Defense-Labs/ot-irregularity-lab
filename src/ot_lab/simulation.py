@@ -18,18 +18,25 @@ from .process import ProcessState, regime_at, signal_metadata, simulate_step
 
 EPOCH = datetime(2025, 1, 1, tzinfo=UTC)
 
-EVENT_SIGNALS = {
-    "sensor_drift": ["*"], "sudden_spike": ["*"],
-    "bearing_degradation": ["vibration_mm_s", "spindle_vibration_mm_s", "motor_temperature_c", "spindle_temperature_c"],
-    "cavitation": ["vibration_mm_s", "flow_l_min", "pressure_bar", "motor_current_a"],
-    "cooling_degradation": ["motor_temperature_c", "spindle_temperature_c", "oil_temperature_c", "discharge_temperature_c"],
-    "mechanical_overload": ["motor_current_a", "spindle_power_kw", "vibration_mm_s", "load_pct"],
-    "sensor_stuck": ["*"], "sensor_bias": ["*"], "missing_telemetry": ["*"],
-    "single_signal_loss": ["*"], "asset_communication_loss": ["*"],
-    "quality_degradation": ["*"], "regime_mismatch": ["*"],
-    "multivariate_novelty": ["*"], "maintenance_activity": ["*"],
-}
 
+def _resolve_ranges(scenario_data: dict[str, Any], rng: np.random.Generator) -> dict[str, Any]:
+    """Replace declared numeric ranges with seeded values and validate their bounds."""
+    resolved = json.loads(json.dumps(scenario_data))
+    for anomaly in resolved.get("anomalies", []):
+        for key, value in list(anomaly.get("parameters", {}).items()):
+            if isinstance(value, dict) and set(value) == {"min", "max"}:
+                low, high = float(value["min"]), float(value["max"])
+                if not np.isfinite([low, high]).all() or low > high:
+                    raise ValueError(f"invalid numeric range for parameter {key}")
+                anomaly["parameters"][key] = float(rng.uniform(low, high))
+        for field in ("start", "duration", "severity"):
+            value = anomaly.get(field)
+            if isinstance(value, dict) and set(value) == {"min", "max"}:
+                low, high = float(value["min"]), float(value["max"])
+                if not np.isfinite([low, high]).all() or low > high:
+                    raise ValueError(f"invalid numeric range for {field}")
+                anomaly[field] = float(rng.uniform(low, high))
+    return resolved
 
 def read_scenario(path: Path) -> Scenario:
     with path.open("r", encoding="utf-8") as stream:
@@ -199,14 +206,15 @@ def _affect(
             # High-normal thermal/vibration values paired with low-normal power/current.
             for name in pick("temperature_c", "oil_temperature_c", "spindle_temperature_c"):
                 _, _, lo, hi = signal_metadata(asset_class)[name]
-                signals[name] = max(signals[name], lo + 0.78 * (hi - lo))
+                signals[name] = float(np.clip(max(signals[name], lo + 0.78 * (hi - lo)), lo, hi))
                 affected.add(name)
             for name in pick("vibration_mm_s", "spindle_vibration_mm_s"):
                 _, _, lo, hi = signal_metadata(asset_class)[name]
-                signals[name] = max(signals[name], lo + 0.75 * (hi - lo))
+                signals[name] = float(np.clip(max(signals[name], lo + 0.75 * (hi - lo)), lo, hi))
                 affected.add(name)
             for name in pick("spindle_power_kw", "motor_current_a"):
-                signals[name] = min(signals[name], signal_metadata(asset_class)[name][2] + 0.25 * (signal_metadata(asset_class)[name][3] - signal_metadata(asset_class)[name][2]))
+                bounds = signal_metadata(asset_class)[name]
+                signals[name] = float(np.clip(min(signals[name], bounds[2] + 0.25 * (bounds[3] - bounds[2])), bounds[2], bounds[3]))
                 affected.add(name)
     elif kind == "maintenance_activity":
         for name in pick("motor_current_a", "spindle_power_kw", "load_pct"):
@@ -300,7 +308,7 @@ def simulate(scenario: Scenario, seed: int) -> tuple[pl.DataFrame, dict[str, Any
         "scenario_sha256": hashlib.sha256(scenario_canonical.encode()).hexdigest(),
         "started_at": origin.isoformat(), "duration_s": scenario.duration_s,
         "sampling_interval_ms": step_ms, "observation_count": telemetry.height,
-        "asset_count": len(scenario.assets), "synthetic": True,
+        "asset_count": len(scenario.assets), "asset_ids": [asset.asset_id for asset in scenario.assets], "synthetic": True,
         "generated": True, "customer_data": False,
     }
     return telemetry, ground_truth, metadata
@@ -333,49 +341,59 @@ def replay(run_dir: Path, output: Path | None = None) -> Path:
 
 
 def batch(suite_path: Path, runs: int, output: Path, seed: int) -> None:
+    if runs <= 0:
+        raise ValueError("runs must be positive")
     suite = yaml.safe_load(suite_path.read_text(encoding="utf-8"))
-    base = Scenario.model_validate(suite["scenario"])
+    base = suite["scenario"]
     partitions = suite.get("partitions", {"train": 0.7, "validation": 0.15, "test": 0.15})
+    if "challenge" in {name.lower() for name in partitions}:
+        raise ValueError("challenge partitions must use ephemeral challenge generation")
+    if not {"train", "validation", "test"}.issubset(partitions):
+        raise ValueError("partitions must define train, validation, and test")
+    if any(not np.isfinite(value) or value < 0 for value in partitions.values()):
+        raise ValueError("partition fractions must be finite and non-negative")
     if abs(sum(partitions.values()) - 1.0) > 1e-9:
         raise ValueError("partition fractions must sum to 1")
     counts = {key: int(runs * value) for key, value in partitions.items()}
     for key in list(partitions)[-1:]:
         counts[key] += runs - sum(counts.values())
     seed_rng = np.random.default_rng(seed)
+    used_seeds: set[int] = set()
     manifest_runs = []
     class_distribution = {"normal": 0, "anomalous": 0}
     asset_distribution: dict[str, int] = {}
+    event_distribution: dict[str, int] = {}
     observation_total = 0
     for partition, count in counts.items():
         for index in range(count):
             run_seed = int(seed_rng.integers(0, 2**63, dtype=np.int64))
-            scenario_data = base.model_dump(mode="json")
+            while run_seed in used_seeds:
+                run_seed = int(seed_rng.integers(0, 2**63, dtype=np.int64))
+            used_seeds.add(run_seed)
+            scenario_data = json.loads(json.dumps(base))
             scenario_data["run_id"] = f"{partition}-{index+1:05d}"
             local_rng = np.random.default_rng(run_seed)
-            for anomaly in scenario_data.get("anomalies", []):
-                for key, value in list(anomaly.get("parameters", {}).items()):
-                    if isinstance(value, dict) and set(value) == {"min", "max"}:
-                        low, high = float(value["min"]), float(value["max"])
-                        if low > high:
-                            raise ValueError(f"range min exceeds max for parameter {key}")
-                        anomaly["parameters"][key] = float(local_rng.uniform(low, high))
-                for field in ("start", "duration", "severity"):
-                    value = anomaly.get(field)
-                    if isinstance(value, dict) and set(value) == {"min", "max"}:
-                        low, high = float(value["min"]), float(value["max"])
-                        if low > high:
-                            raise ValueError(f"range min exceeds max for {field}")
-                        anomaly[field] = float(local_rng.uniform(low, high))
-            scenario = Scenario.model_validate(scenario_data)
+            scenario_data = _resolve_ranges(scenario_data, local_rng)
+            scenario_data["run_id"] = f"{partition}-{index+1:05d}"
+            scenario = Scenario.model_validate(resolve_profiles(scenario_data))
             run_dir = output / partition / scenario.run_id
             write_run(scenario, run_seed, run_dir)
+            (run_dir / "scenario.yaml").write_text(yaml.safe_dump(scenario.model_dump(mode="json"), sort_keys=False), encoding="utf-8")
             digest = hashlib.sha256((run_dir / "telemetry.parquet").read_bytes()).hexdigest()
-            manifest_runs.append({"partition": partition, "run_id": scenario.run_id, "seed": run_seed, "sha256": digest})
+            manifest_runs.append({
+                "partition": partition, "run_id": scenario.run_id, "seed": run_seed,
+                "telemetry_sha256": digest, "scenario_id": scenario.scenario_id,
+                "scenario_version": scenario.scenario_version,
+            })
             run_meta = json.loads((run_dir / "run_metadata.json").read_text(encoding="utf-8"))
             manifest_runs[-1]["observation_count"] = run_meta["observation_count"]
             manifest_runs[-1]["scenario_sha256"] = run_meta["scenario_sha256"]
+            manifest_runs[-1]["ground_truth_sha256"] = hashlib.sha256((run_dir / "ground_truth.json").read_bytes()).hexdigest()
+            manifest_runs[-1]["metadata_sha256"] = hashlib.sha256((run_dir / "run_metadata.json").read_bytes()).hexdigest()
             observation_total += run_meta["observation_count"]
             class_distribution["anomalous" if scenario.anomalies else "normal"] += 1
+            for anomaly in scenario.anomalies:
+                event_distribution[anomaly.type] = event_distribution.get(anomaly.type, 0) + 1
             for asset in scenario.assets:
                 asset_distribution[asset.asset_class] = asset_distribution.get(asset.asset_class, 0) + 1
     manifest = {
@@ -384,6 +402,7 @@ def batch(suite_path: Path, runs: int, output: Path, seed: int) -> None:
         "partition_counts": counts, "runs": manifest_runs,
         "class_distribution": class_distribution,
         "asset_distribution": asset_distribution,
+        "event_distribution": event_distribution,
         "synthetic": True, "generated": True, "customer_data": False,
     }
     (output / "dataset_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -394,17 +413,11 @@ def generate_challenge(suite_path: Path, output: Path, master_seed: int | None =
     suite = yaml.safe_load(suite_path.read_text(encoding="utf-8"))
     seed = int(np.random.SeedSequence().generate_state(1, dtype=np.uint64)[0]) if master_seed is None else master_seed
     case_dir = output / "case"
-    scenario_data = suite["scenario"]
+    scenario_data = json.loads(json.dumps(suite["scenario"]))
     scenario_data["run_id"] = f"challenge-{hashlib.sha256(str(seed).encode()).hexdigest()[:12]}"
     rng = np.random.default_rng(seed)
-    for anomaly in scenario_data.get("anomalies", []):
-        for key, value in list(anomaly.get("parameters", {}).items()):
-            if isinstance(value, dict) and set(value) == {"min", "max"}:
-                anomaly["parameters"][key] = float(rng.uniform(float(value["min"]), float(value["max"])))
-        for field in ("start", "duration", "severity"):
-            value = anomaly.get(field)
-            if isinstance(value, dict) and set(value) == {"min", "max"}:
-                anomaly[field] = float(rng.uniform(float(value["min"]), float(value["max"])))
+    scenario_data = _resolve_ranges(scenario_data, rng)
+    scenario_data["run_id"] = f"challenge-{hashlib.sha256(str(seed).encode()).hexdigest()[:12]}"
     scenario_data = resolve_profiles(scenario_data)
     scenario = Scenario.model_validate(scenario_data)
     write_run(scenario, seed, case_dir, persist_scenario=False)

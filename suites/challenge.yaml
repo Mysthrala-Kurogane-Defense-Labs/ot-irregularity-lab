@@ -9,6 +9,8 @@ scenario:
   assets:
     - asset_id: CNC-01
       asset_class: cnc
+    - asset_id: PUMP-01
+      asset_class: pump
   anomalies:
     - type: bearing_degradation
       asset: CNC-01

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -54,15 +54,31 @@ def _event_detection_metrics(events: list[dict[str, Any]], predictions: pl.DataF
         })
     tp = sum(e["detected"] for e in matched_events)
     fn = len(matched_events) - tp
-    # Predicted windows are false positives if they do not overlap any event for the same asset.
+    # A predicted alert window is an event-level false positive if too little of it overlaps ground truth.
     fp = 0
     tp_windows = 0
+    false_positive_duration_s = 0.0
     all_events_by_asset: dict[str, list[tuple[datetime, datetime]]] = {}
     for event in events:
         all_events_by_asset.setdefault(event["asset_id"], []).append((_time(event.get("observed_start", event["start"])), _time(event.get("observed_end", event["end"]))))
     for row in selected:
         a, b = _time(row["window_start"]), _time(row["window_end"])
-        if any(max(a, c) < min(b, d) for c, d in all_events_by_asset.get(row["asset_id"], [])):
+        duration = max((b - a).total_seconds(), 1e-9)
+        overlaps = []
+        for c, d in all_events_by_asset.get(row["asset_id"], []):
+            left, right = max(a, c), min(b, d)
+            if right > left:
+                overlaps.append((left, right))
+        overlaps.sort()
+        union: list[list[datetime]] = []
+        for left, right in overlaps:
+            if union and left <= union[-1][1]:
+                union[-1][1] = max(union[-1][1], right)
+            else:
+                union.append([left, right])
+        event_overlap_s = sum((right - left).total_seconds() for left, right in union)
+        false_positive_duration_s += max(0.0, duration - event_overlap_s)
+        if event_overlap_s / duration >= overlap:
             tp_windows += 1
         else:
             fp += 1
@@ -92,6 +108,7 @@ def _event_detection_metrics(events: list[dict[str, Any]], predictions: pl.DataF
         "event_detection_rate": recall, "true_positive_events": int(tp),
         "false_positive_windows": fp, "missed_events": int(fn),
         "true_positive_windows": tp_windows,
+        "false_positive_duration_s": false_positive_duration_s,
         "false_positives_per_asset_hour": fp / exposure_hours,
         "false_positives_per_asset_day": fp / exposure_hours * 24,
         "mean_time_to_first_detection_s": float(np.mean(latencies)) if latencies else None,
@@ -103,42 +120,58 @@ def _event_detection_metrics(events: list[dict[str, Any]], predictions: pl.DataF
     }
 
 
-def _pr_auc(events: list[dict[str, Any]], predictions: pl.DataFrame, overlap: float, exposure_hours: float) -> float | None:
-    if not events:
-        return None
-    intervals = []
-    positive = 0
+def _timestamp_scores(events: list[dict[str, Any]], predictions: pl.DataFrame, telemetry: pl.DataFrame, metadata: dict[str, Any]) -> tuple[list[float], list[bool]]:
+    """Assign each expected asset sample the highest covering score and event label, including missing samples."""
+    event_intervals = {
+        asset_id: [(_time(item.get("observed_start", item["start"])), _time(item.get("observed_end", item["end"]))) for item in events if item["asset_id"] == asset_id]
+        for asset_id in {event["asset_id"] for event in events}
+    }
+    pred_intervals: dict[str, list[tuple[datetime, datetime, float]]] = {}
     for row in predictions.to_dicts():
-        start, end = _time(row["window_start"]), _time(row["window_end"])
-        duration = (end - start).total_seconds()
-        covered = 0.0
-        for event in events:
-            if event["asset_id"] != row["asset_id"]:
-                continue
-            event_start = _time(event.get("observed_start", event["start"]))
-            event_end = _time(event.get("observed_end", event["end"]))
-            left, right = max(start, event_start), min(end, event_end)
-            if right > left:
-                covered += (right - left).total_seconds()
-        label = covered / duration >= overlap
-        positive += int(label)
-        intervals.append((float(row["irregularity_score"]), label))
+        pred_intervals.setdefault(row["asset_id"], []).append((_time(row["window_start"]), _time(row["window_end"]), float(row["irregularity_score"])))
+    start = _time(metadata["started_at"])
+    cadence = int(metadata["sampling_interval_ms"])
+    total_samples = int(float(metadata["duration_s"]) * 1000 / cadence)
+    asset_ids = metadata.get("asset_ids") or telemetry.get_column("asset_id").unique().to_list()
+    samples = [
+        {"asset_id": asset_id, "timestamp": start + timedelta(milliseconds=index * cadence)}
+        for asset_id in asset_ids for index in range(total_samples)
+    ]
+    scores: list[float] = []
+    labels: list[bool] = []
+    for sample in samples:
+        timestamp, asset_id = sample["timestamp"], sample["asset_id"]
+        labels.append(any(start <= timestamp <= end for start, end in event_intervals.get(asset_id, [])))
+        scores.append(max((score for start, end, score in pred_intervals.get(asset_id, []) if start <= timestamp <= end), default=0.0))
+    return scores, labels
+
+
+def _window_pr_auc(events: list[dict[str, Any]], predictions: pl.DataFrame, telemetry: pl.DataFrame, metadata: dict[str, Any]) -> float | None:
+    scores, labels = _timestamp_scores(events, predictions, telemetry, metadata)
+    positive = sum(labels)
     if positive == 0:
         return None
-    points = [(0.0, 1.0)]
-    for threshold in sorted({score for score, _ in intervals}, reverse=True):
-        selected = [label for score, label in intervals if score >= threshold]
+    precisions: list[float] = []
+    recalls: list[float] = []
+    for threshold in sorted(set(scores), reverse=True):
+        selected = [label for score, label in zip(scores, labels, strict=True) if score >= threshold]
         tp = sum(selected)
         fp = len(selected) - tp
         fn = positive - tp
         precision = tp / (tp + fp) if tp + fp else 1.0
         recall = tp / (tp + fn) if tp + fn else 0.0
-        points.append((recall, precision))
-    points.sort(key=lambda point: point[0])
-    return float(np.trapezoid([point[1] for point in points], [point[0] for point in points]))
+        precisions.append(precision)
+        recalls.append(recall)
+    # Average precision integrates the right-continuous precision envelope at recall changes.
+    previous_recall = 0.0
+    area = 0.0
+    for precision, recall in zip(precisions, recalls, strict=True):
+        area += max(0.0, recall - previous_recall) * precision
+        previous_recall = max(previous_recall, recall)
+    return float(area)
 
 
-def evaluate(ground_truth_path: Path, predictions_path: Path, output_dir: Path, threshold: float = 0.5, overlap: float = 0.1, telemetry_path: Path | None = None) -> dict[str, Any]:
+def evaluate(ground_truth_path: Path, predictions_path: Path, output_dir: Path, threshold: float = 0.5, overlap: float = 0.1, telemetry_path: Path | None = None, metadata_path: Path | None = None) -> dict[str, Any]:
     truth = json.loads(ground_truth_path.read_text(encoding="utf-8"))
     predictions = pl.read_ndjson(predictions_path)
     missing = PREDICTION_COLUMNS - set(predictions.columns)
@@ -150,25 +183,35 @@ def evaluate(ground_truth_path: Path, predictions_path: Path, output_dir: Path, 
         raise ValueError("irregularity_score must be between 0 and 1")
     if predictions.filter(pl.col("irregularity_score").is_null() | pl.col("window_start").is_null() | pl.col("window_end").is_null() | (pl.col("window_end") <= pl.col("window_start"))).height:
         raise ValueError("prediction windows must have finite scores and end after start")
+    asset_ids = predictions.get_column("asset_id").to_list()
+    if any(not isinstance(asset_id, str) or not asset_id for asset_id in asset_ids):
+        raise ValueError("prediction asset_id values must be non-null strings")
     if telemetry_path is None:
         raise ValueError("telemetry_path is required to calculate false-positive rates per asset-hour/day")
-    telemetry = pl.read_parquet(telemetry_path, columns=["asset_id", "timestamp"])
-    bounds = telemetry.group_by("asset_id").agg(
-        pl.col("timestamp").min().dt.epoch("ms").alias("start_ms"),
-        pl.col("timestamp").max().dt.epoch("ms").alias("end_ms"),
-    )
-    exposure_hours = sum(max(row["end_ms"] - row["start_ms"], 0) for row in bounds.iter_rows(named=True)) / 3_600_000
+    telemetry = pl.read_parquet(telemetry_path)
+    meta_path = metadata_path or telemetry_path.with_name("run_metadata.json")
+    metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+    exposure_hours = float(metadata["duration_s"]) * int(metadata.get("asset_count", 0)) / 3600
     events = truth["events"]
-    if telemetry.is_empty():
+    if telemetry.is_empty() and int(metadata.get("observation_count", 0)) > 0:
         raise ValueError("telemetry input must contain at least one observation")
     run_ids = telemetry.select("run_id").unique().get_column("run_id").to_list() if "run_id" in telemetry.columns else []
     if run_ids and run_ids != [truth["run_id"]]:
         raise ValueError("telemetry and ground truth run_id values do not match")
-    telemetry_assets = set(telemetry.get_column("asset_id").unique().to_list())
-    if any(row["asset_id"] not in telemetry_assets for row in predictions.to_dicts()):
+    telemetry_assets = set(telemetry.get_column("asset_id").unique().to_list()) if "asset_id" in telemetry.columns else set()
+    declared_assets = set(metadata.get("asset_ids", telemetry_assets))
+    if any(row["asset_id"] not in declared_assets for row in predictions.to_dicts()):
         raise ValueError("predictions reference an asset absent from telemetry")
     result = _event_detection_metrics(events, predictions, threshold, overlap, exposure_hours)
-    result["window_pr_auc"] = _pr_auc(events, predictions, overlap, exposure_hours)
+    sample_scores, sample_labels = _timestamp_scores(events, predictions, telemetry, metadata)
+    sample_predicted = [score >= threshold for score in sample_scores]
+    sample_tp = sum(pred and label for pred, label in zip(sample_predicted, sample_labels, strict=True))
+    sample_fp = sum(pred and not label for pred, label in zip(sample_predicted, sample_labels, strict=True))
+    sample_fn = sum(not pred and label for pred, label in zip(sample_predicted, sample_labels, strict=True))
+    result["window_precision"] = sample_tp / (sample_tp + sample_fp) if sample_tp + sample_fp else 0.0
+    result["window_recall"] = sample_tp / (sample_tp + sample_fn) if sample_tp + sample_fn else 0.0
+    result["window_f1"] = 2 * result["window_precision"] * result["window_recall"] / (result["window_precision"] + result["window_recall"]) if result["window_precision"] + result["window_recall"] else 0.0
+    result["window_pr_auc"] = _window_pr_auc(events, predictions, telemetry, metadata)
     result["pr_auc"] = result["window_pr_auc"]
     result["run_id"] = truth["run_id"]
     result["prediction_count"] = predictions.height

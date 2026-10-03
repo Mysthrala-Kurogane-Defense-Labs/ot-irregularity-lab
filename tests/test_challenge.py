@@ -1,5 +1,6 @@
 import json
 
+import pytest
 import yaml
 
 from ot_lab.simulation import generate_challenge
@@ -36,3 +37,17 @@ def test_difficulty_profiles_resolve_to_numeric_parameters():
     assert resolved["parameters"]["vibration_gain"] == 0.1
     assert resolved["parameters"]["temperature_gain"] == 0.04000000000000001
     assert resolved["resolved_difficulty"] == {"profile": "hard", "gain_scale": 0.1}
+
+
+def test_range_resolution_rejects_invalid_challenge_bounds(tmp_path):
+    suite = tmp_path / "suite.yaml"
+    suite.write_text("""scenario:
+  scenario_id: range-test
+  duration_s: 10
+  sampling_interval_ms: 1000
+  assets: [{asset_id: P-1, asset_class: pump}]
+  anomalies:
+    - {type: sensor_bias, asset: P-1, start: 2, duration: 3, parameters: {bias: {min: 2, max: 1}}}
+""", encoding="utf-8")
+    with pytest.raises(ValueError, match="invalid numeric range"):
+        generate_challenge(suite, tmp_path / "challenge", master_seed=11)
