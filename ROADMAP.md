@@ -26,7 +26,7 @@ OT Irregularity Lab v0.2.0 delivers a randomized suite and one public 1,000-run 
 ## Release and governance
 
 - [ ] Sign software tags and dataset manifests when an authorized signing key is available. v0.2.0 is published and CI-verified, but its tag is unsigned because the configured local SSH key rejected the passphrase.
-- [x] Publish OT Irregularity Dataset v0.3.0 with a separate CC BY 4.0 notice, deterministic archive, release checksum, per-run and partition hashes, and reproducible generation record.
+- [x] Publish OT Irregularity Dataset v0.3.0 with a separate CC BY 4.0 notice, deterministic archive, release checksum, per-run and partition hashes, and reproducible generation record; public download hash verified.
 - [ ] Preserve model-agnostic behavior and public definitions; never tune scenario behavior in response to a particular detector's score.
 
 ## Current evidence boundary
