@@ -62,6 +62,11 @@ def main() -> None:
     challenge_cmd.add_argument("--output", type=Path, required=True)
     challenge_cmd.add_argument("--timeout", type=int, default=300)
     challenge_cmd.add_argument("--max-output-bytes", type=int, default=DEFAULT_MAX_OUTPUT_BYTES)
+    opcua_cmd = commands.add_parser("opcua-replay", help="serve canonical telemetry over optional OPC UA adapter (loopback by default)")
+    opcua_cmd.add_argument("--telemetry", type=Path, required=True)
+    opcua_cmd.add_argument("--endpoint", default="opc.tcp://127.0.0.1:4840/ot-lab/")
+    opcua_cmd.add_argument("--fast", action="store_true", help="replay immediately without matching timestamp intervals")
+    opcua_cmd.add_argument("--serve", action="store_true", help="keep the server running with the final values after replay")
     compare_cmd = commands.add_parser("compare", help="evaluate multiple prediction JSONL files")
     compare_cmd.add_argument("--run", type=Path, required=True)
     compare_cmd.add_argument("--predictions", type=Path, nargs="+", required=True)
@@ -101,6 +106,12 @@ def main() -> None:
             (args.output / "metrics.json").write_text((result_dir / "metrics.json").read_text(encoding="utf-8"), encoding="utf-8")
             (args.output / "report.html").write_text((result_dir / "report.html").read_text(encoding="utf-8"), encoding="utf-8")
             print(json.dumps({key: value for key, value in result.items() if key != "events"}, indent=2))
+    elif args.command == "opcua-replay":
+        import asyncio
+
+        from .protocols.opcua import replay_opcua
+
+        asyncio.run(replay_opcua(args.telemetry, args.endpoint, realtime=not args.fast, stay_open=args.serve))
     elif args.command == "compare":
         rows = []
         for prediction in args.predictions:

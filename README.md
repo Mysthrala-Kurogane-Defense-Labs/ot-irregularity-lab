@@ -24,6 +24,8 @@ The 1,000-run [OT Irregularity Training Dataset v0.2.0](https://github.com/Mysth
 
 The model input is `telemetry.parquet`; never pass `ground_truth.json` or `run_metadata.json` to a model submission. The evaluator reads predictions and ground truth in a separate process. Do not mount ground truth into inference containers.
 
+Optional protocol replay adapters are documented in [PROTOCOLS.md](PROTOCOLS.md). The core generator does not require protocol emulators.
+
 ## Repository guide
 
 - [Architecture](ARCHITECTURE.md)
