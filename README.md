@@ -34,6 +34,8 @@ Optional protocol replay adapters are documented in [PROTOCOLS.md](PROTOCOLS.md)
 
 Current public-source calibration evidence and its limits are recorded in [CALIBRATION.md](CALIBRATION.md); process dynamics remain illustrative until independently calibrated.
 
+To analyze a locally obtained, CC BY 4.0 MetroPT-3 CSV without adding it to the repository, use `uv run ot-lab calibration analyze-metropt --input PATH_TO_CSV --output calibration/metropt-3-summary.json`. The report contains aggregate statistics and source hash only. An opt-in compressor `process_profile: metropt3_rail_apu` uses a limited, documented subset of those observations; it is not a digital twin and does not alter the generic compressor model.
+
 ## Repository guide
 
 - [Architecture](ARCHITECTURE.md)

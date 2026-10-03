@@ -185,6 +185,7 @@ def _event_active(event: Any, seconds: float) -> bool:
 def _affect(
     event: Any, signals: dict[str, float], seconds: float,
     states: dict[str, ProcessState], asset_class: str, sample_index: int, run_seed: int,
+    event_id: str = "event-0",
 ) -> tuple[dict[str, float], set[str], str]:
     """Apply a named physical/measurement/communications effect, returning label metadata."""
     affected: set[str] = set()
@@ -192,10 +193,12 @@ def _affect(
     kind = event.type
     fraction = min(1.0, max(0.0, (seconds - event.start) / max(event.duration, 1)))
     p = event.parameters
-    # Severity scales continuous effects from 0 (no process perturbation) to
-    # 1 (the configured parameter magnitude). Categorical effects such as an
-    # outage or quality flag remain categorical; their severity is a label.
+    # Severity scales configured continuous magnitudes and probabilities.
+    # Full-severity outages retain their categorical behavior.
     severity_scale = float(np.clip(event.severity, 0.0, 1.0))
+    def draw_for(signal: str, label: str) -> float:
+        token = f"{run_seed}|{event.asset}|{signal}|{sample_index}|{event.start}|{label}".encode()
+        return int(hashlib.sha256(token).hexdigest()[:8], 16) / 0x100000000
     def pick(*names: str) -> list[str]:
         return [name for name in signals if name in names or any(fragment in name for fragment in names)]
     if kind == "bearing_degradation":
@@ -264,24 +267,36 @@ def _affect(
         names = [str(p["signal"])] if "signal" in p else [next(iter(signals))]
         if any(name not in signals for name in names):
             raise ValueError("sensor_stuck references a signal absent from the target asset")
-        state = states.get("__sensor_stuck", ProcessState())
+        state = states.setdefault("__sensor_stuck", ProcessState())
         for name in names:
             if name in signals:
-                state.previous_signals.setdefault(name, signals[name])
-                signals[name] = state.previous_signals[name]
-                affected.add(name)
+                held_key = f"sensor_stuck:{event_id}:{name}"
+                state.previous_signals.setdefault(held_key, signals[name])
+                signals[name] = signals[name] * (1 - severity_scale) + state.previous_signals[held_key] * severity_scale
+                if severity_scale > 0:
+                    affected.add(name)
         states["__sensor_stuck"] = state
-        quality = "UNCERTAIN"
+        if severity_scale > 0:
+            quality = "UNCERTAIN"
     elif kind == "single_signal_loss":
         names = _select_loss_signals(signals, p, run_seed, event, sample_index, force_single=True)
         if any(name not in signals for name in names):
             raise ValueError("single_signal_loss references a signal absent from the target asset")
+        loss_pct = float(p.get("loss_pct", 100))
+        if not 0 <= loss_pct <= 100:
+            raise ValueError("loss_pct must be within 0..100")
         for name in names:
-            signals.pop(name, None)
-            affected.add(name)
+            if draw_for(name, "single-signal-loss") < loss_pct * severity_scale / 100:
+                signals.pop(name, None)
+                affected.add(name)
     elif kind == "asset_communication_loss":
-        affected.update(signals)
-        signals.clear()
+        loss_pct = float(p.get("loss_pct", 100))
+        if not 0 <= loss_pct <= 100:
+            raise ValueError("loss_pct must be within 0..100")
+        for name in list(signals):
+            if draw_for(name, "asset-communication-loss") < loss_pct * severity_scale / 100:
+                signals.pop(name, None)
+                affected.add(name)
     elif kind == "missing_telemetry":
         loss_pct = float(p.get("loss_pct", 100 if kind == "asset_communication_loss" else 25))
         if not 0 <= loss_pct <= 100:
@@ -295,14 +310,13 @@ def _affect(
         else:
             for name in candidates:
                 # Stable hashed selection per timestamp, no hidden state or extra RNG consumption.
-                token = f"{run_seed}|{event.asset}|{name}|{sample_index}|{event.start}".encode()
-                draw = int(hashlib.sha256(token).hexdigest()[:8], 16) / 0x100000000
-                if (severity_scale >= 1 and loss_pct >= 100) or draw < loss_pct / 100:
+                if draw_for(name, "missing-telemetry") < loss_pct / 100:
                     affected.add(name)
                     signals.pop(name)
     elif kind == "quality_degradation":
-        quality = "BAD"
-        affected.update(signals)
+        if draw_for("__asset__", "quality-degradation") < severity_scale:
+            quality = "BAD"
+            affected.update(signals)
     elif kind == "regime_mismatch":
         targets = pick("load_pct", "spindle_power_kw", "motor_current_a", "feed_rate")
         for name in targets:
@@ -428,8 +442,8 @@ def simulate(scenario: Scenario, seed: int) -> tuple[pl.DataFrame, dict[str, Any
                 if anomaly.asset == asset.asset_id and _event_active(anomaly, seconds):
                     active_events.append(anomaly)
                     before = set(signals)
-                    signals, affected, quality = _affect(anomaly, signals, seconds, states, asset.asset_class, step, seed)
                     event_index = scenario.anomalies.index(anomaly) + 1
+                    signals, affected, quality = _affect(anomaly, signals, seconds, states, asset.asset_class, step, seed, f"evt-{event_index}")
                     event_record = next(e for e in events if e["event_id"] == f"evt-{event_index}")
                     affected_by_event[event_record["event_id"]].update(affected)
                     if anomaly.type == "quality_degradation":

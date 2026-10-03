@@ -9,10 +9,11 @@ import polars as pl
 import pytest
 
 from ot_lab.evaluation import evaluate
-from ot_lab.models import AssetSpec, Scenario
+from ot_lab.models import Anomaly, AssetSpec, Scenario
 from ot_lab.process import ProcessState, regime_at, simulate_step
 from ot_lab.simulation import (
     EPOCH,
+    _affect,
     _generate_suite_scenario,
     batch,
     replay,
@@ -276,6 +277,24 @@ def test_each_process_model_couples_high_load_to_power_or_current(asset_class, s
     assert high.temperature > low.temperature
 
 
+def test_metropt_rail_apu_profile_stays_inside_observed_mode_envelopes():
+    asset = AssetSpec(asset_id="APU-1", asset_class="compressor", process_profile="metropt3_rail_apu")
+    loaded = [simulate_step(asset, ProcessState(temperature=65), "NORMAL_LOAD", 10, 22, np.random.default_rng(seed)) for seed in range(200)]
+    off = [simulate_step(asset, ProcessState(temperature=65), "OFF", 10, 22, np.random.default_rng(seed)) for seed in range(200)]
+    loaded_currents = np.array([sample["motor_current_a"] for sample in loaded])
+    off_currents = np.array([sample["motor_current_a"] for sample in off])
+    loaded_pressure = np.array([sample["pressure_bar"] for sample in loaded])
+    assert 4.7 < np.quantile(loaded_currents, 0.5) < 6.3
+    assert np.quantile(off_currents, 0.95) < 0.1
+    assert 8 < np.quantile(loaded_pressure, 0.5) < 10
+    assert all(0 <= sample["oil_temperature_c"] <= 110 for sample in loaded + off)
+
+
+def test_metropt_rail_apu_profile_is_rejected_for_non_compressor_assets():
+    with pytest.raises(ValueError, match="requires asset_class=compressor"):
+        AssetSpec(asset_id="P-1", asset_class="pump", process_profile="metropt3_rail_apu")
+
+
 def test_sampling_jitter_changes_intervals_deterministically():
     scenario = Scenario.model_validate({
         "scenario_id": "jitter", "duration_s": 20, "sampling_interval_ms": 1000,
@@ -482,6 +501,61 @@ def test_missing_telemetry_masks_vary_by_run_seed_and_reproduce_with_same_seed()
     first_keys = set(first.with_columns(pl.col("timestamp").dt.epoch("ms")).select("timestamp", "tag_id").iter_rows())
     second_keys = set(second_seed.with_columns(pl.col("timestamp").dt.epoch("ms")).select("timestamp", "tag_id").iter_rows())
     assert first_keys != second_keys
+
+
+@pytest.mark.parametrize("kind", ["single_signal_loss", "asset_communication_loss", "quality_degradation"])
+def test_discrete_effect_severity_scales_effect_frequency(kind):
+    signals = {f"tag_{index}": float(index) for index in range(8)}
+    observed = []
+    for severity in (0.0, 0.25, 0.5, 1.0):
+        affected_total = 0
+        for sample_index in range(2000):
+            event = Anomaly(
+                type=kind, asset="P-1", start=0, duration=10,
+                severity=severity,
+                parameters={"loss_pct": 80, "tag_selection": "single"} if kind == "single_signal_loss" else {"loss_pct": 80},
+            )
+            _row, affected, quality = _affect(
+                event, signals.copy(), 1,
+                {"process": ProcessState(temperature=20)}, "pump", sample_index, 123,
+            )
+            if kind == "quality_degradation":
+                affected_total += quality == "BAD"
+            elif kind == "single_signal_loss":
+                affected_total += bool(affected)
+            else:
+                affected_total += len(affected)
+        observed.append(affected_total)
+
+    assert observed[0] == 0
+    assert observed == sorted(observed)
+    assert observed[-1] > observed[1] > 0
+
+
+@pytest.mark.parametrize(("severity", "expected"), [(0.0, 20.0), (0.5, 15.0), (1.0, 10.0)])
+def test_sensor_stuck_severity_scales_blend_with_held_value(severity, expected):
+    event = Anomaly(
+        type="sensor_stuck", asset="P-1", start=0, duration=10,
+        severity=severity, parameters={"signal": "motor_current_a"},
+    )
+    row, affected, quality = _affect(
+        event, {"motor_current_a": 20.0}, 1, {"__sensor_stuck": ProcessState(previous_signals={"sensor_stuck:event-0:motor_current_a": 10.0})}, "pump", 1, 123,
+    )
+    assert row["motor_current_a"] == pytest.approx(expected)
+    assert bool(affected) is (severity > 0)
+    assert quality == ("UNCERTAIN" if severity > 0 else "GOOD")
+
+
+def test_sensor_stuck_holds_first_event_value_across_time():
+    event = Anomaly(
+        type="sensor_stuck", asset="P-1", start=0, duration=10, severity=0.5,
+        parameters={"signal": "motor_current_a"},
+    )
+    states = {}
+    first, _, _ = _affect(event, {"motor_current_a": 10.0}, 1, states, "pump", 1, 7, "evt-1")
+    second, _, _ = _affect(event, {"motor_current_a": 30.0}, 2, states, "pump", 2, 7, "evt-1")
+    assert first["motor_current_a"] == pytest.approx(10.0)
+    assert second["motor_current_a"] == pytest.approx(20.0)
 
 
 @pytest.mark.parametrize(("selection", "count"), [("single", 1), ("multiple", 3), ("all", 7)])

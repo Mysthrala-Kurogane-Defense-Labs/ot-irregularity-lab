@@ -1,5 +1,6 @@
 # Synthetic dataset generation records
 
+- 2026-10-03 — [MetroPT-3 calibration and severity semantics](runs/2026-10-03-metropt-calibration.md): full reference CSV integrity and aggregate analysis, opt-in rail APU profile, and severity behavior tests.
 - 2026-10-03 — [Challenge container end-to-end smoke](runs/2026-10-03-challenge-container-smoke.md): single-file mounts and full short challenge verified with local Docker; container change published in `c34cb6c`, normal suite in `c30ea85`, both CI runs passed.
 - 2026-10-03 — [Ephemeral challenge metadata hardening](runs/2026-10-03-challenge-metadata-hardening.md): hidden scenario metadata removed, 20-case regression and separate challenge distribution published; CI runs `37146984474` and `37147259217` passed.
 

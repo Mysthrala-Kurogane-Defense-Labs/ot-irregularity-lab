@@ -1,0 +1,74 @@
+{
+  "analysis_version": "1.0.0",
+  "cadence_seconds": {
+    "fraction_over_120s": 0.000216,
+    "p05_s": 9.0,
+    "p50_s": 10.0,
+    "p95_s": 10.0,
+    "positive_intervals": 1516947
+  },
+  "interpretation": [
+    "Descriptive statistics characterize one railway air-production unit; they are not universal compressor ranges or failure priors.",
+    "The off_or_unloaded bucket combines states the available binary channels do not safely distinguish.",
+    "No source observations or derived time-series rows are emitted; this report contains aggregate statistics and provenance only.",
+    "These cross-sectional summaries do not estimate thermal time constants, control-loop dynamics, or causal effects."
+  ],
+  "mode_conditioned_signals": {
+    "loaded": {
+      "current_pressure_pearson_r": 0.391975,
+      "motor_current_a_p05": 4.7575,
+      "motor_current_a_p50": 5.835,
+      "motor_current_a_p95": 6.2025,
+      "oil_temperature_c_p05": 52.825,
+      "oil_temperature_c_p50": 65.9,
+      "oil_temperature_c_p95": 76.3,
+      "pressure_bar_p05": 7.788,
+      "pressure_bar_p50": 8.866,
+      "pressure_bar_p95": 10.054,
+      "rows": 243638
+    },
+    "off_or_unloaded": {
+      "current_pressure_pearson_r": 0.767857,
+      "motor_current_a_p05": 0.0375,
+      "motor_current_a_p50": 0.0425,
+      "motor_current_a_p95": 3.87,
+      "oil_temperature_c_p05": 52.3,
+      "oil_temperature_c_p50": 62.05,
+      "oil_temperature_c_p95": 71.55,
+      "pressure_bar_p05": 8.172,
+      "pressure_bar_p50": 8.978,
+      "pressure_bar_p95": 9.956,
+      "rows": 1263084
+    },
+    "other_or_transition": {
+      "current_pressure_pearson_r": 0.398876,
+      "motor_current_a_p05": 0.04,
+      "motor_current_a_p50": 3.7425,
+      "motor_current_a_p95": 5.575,
+      "oil_temperature_c_p05": 49.45,
+      "oil_temperature_c_p50": 65.025,
+      "oil_temperature_c_p95": 66.725,
+      "pressure_bar_p05": 8.168,
+      "pressure_bar_p50": 8.506,
+      "pressure_bar_p95": 9.728,
+      "rows": 10226
+    }
+  },
+  "mode_definition": {
+    "loaded": "DV_eletric > 0.5",
+    "off_or_unloaded": "COMP > 0.5 and DV_eletric <= 0.5; these states are intentionally not separated",
+    "other_or_transition": "remaining digital-state combinations"
+  },
+  "source": {
+    "bytes": 218300507,
+    "dataset": "MetroPT-3",
+    "doi": "10.24432/C5VW3R",
+    "input_filename": "MetroPT3-AirCompressor.csv",
+    "license": "CC BY 4.0",
+    "publisher": "UCI Machine Learning Repository",
+    "rows_used": 1516948,
+    "sha256": "db30ccb4ea402e3c8bf2c99db06e288d4f2a772f6928f9dbe26a920d69793e24",
+    "time_end": "2020-09-01T03:59:50",
+    "time_start": "2020-02-01T00:00:00"
+  }
+}

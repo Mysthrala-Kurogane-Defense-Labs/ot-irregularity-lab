@@ -37,12 +37,21 @@ class AssetSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
     asset_id: str
     asset_class: AssetType
+    process_profile: Literal["generic", "metropt3_rail_apu"] = "generic"
     regimes: list[Regime] = Field(
         default_factory=lambda: ["WARMUP", "LOW_LOAD", "NORMAL_LOAD", "HIGH_LOAD", "COOLDOWN"]
     )
     device_id: str | None = None
     site_id: str | None = None
     zone_id: str | None = None
+
+    @field_validator("process_profile")
+    @classmethod
+    def profile_matches_asset(cls, value: str, info: Any) -> str:
+        asset_class = info.data.get("asset_class")
+        if value == "metropt3_rail_apu" and asset_class != "compressor":
+            raise ValueError("metropt3_rail_apu process_profile requires asset_class=compressor")
+        return value
 
 
 class Scenario(BaseModel):

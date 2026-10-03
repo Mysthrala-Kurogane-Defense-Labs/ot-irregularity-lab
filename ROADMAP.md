@@ -4,11 +4,11 @@ OT Irregularity Lab v0.2.0 delivers a randomized suite and one public 1,000-run 
 
 ## Dataset and simulator
 
-- [x] Make event severity operational for continuous effects and missingness probability, while retaining categorical outages/quality as discrete states. Severity 0 leaves continuous effects unchanged; severity 1 applies configured magnitudes. Categorical event severity remains descriptive. More type-specific calibration remains needed.
+- [x] Make event severity operational for continuous effects and sampled effects. Severity 0 leaves the process unchanged; severity 1 applies configured magnitudes or loss rates. `sensor_stuck` blends toward the held value, while communication loss, single-signal loss and quality degradation apply seeded per-sample probabilities. Discrete outcomes remain categorical, but their frequency responds to severity. More type-specific calibration remains needed.
 - [x] Implement deterministic configured missingness rates from 5%, 10%, 25%, 50%, and 100%, with event ground truth covering selected affected tags; empirical rates are checked across 40 independent seeds per rate. Support fixed `single`, `multiple`, `all`, and explicit signal-list tag selection.
 - [x] Add resumable generation via `ot-lab dataset create --resume`, with per-run checkpoints, suite/seed/version validation, deterministic recovery, hash-checked scenario reconstruction, and atomic final publication. [ ] Add chunked parallel generation and document measured storage/performance limits.
 - [ ] Support independently published partition artifacts and release manifests that link one dataset version without leaking challenge seeds.
-- [ ] Expand asset/control coverage and calibrate process parameters against authoritative published specifications or openly licensed data. Current process models are simplified, plausible examples, not calibrated digital twins.
+- [ ] Expand asset/control coverage and calibrate process parameters against authoritative published specifications or openly licensed data. Added a full UCI MetroPT-3 aggregate report and opt-in `metropt3_rail_apu` profile bounded to observed state-conditioned current/pressure/temperature envelopes; generic compressor behavior is unchanged. The profile's transient dynamics and several signals remain illustrative, so this is not a calibrated digital twin.
 
 ## Evaluation and challenge
 

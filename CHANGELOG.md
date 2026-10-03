@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Added aggregate-only, provenance-hashed analysis for the full public MetroPT-3 compressor dataset and an opt-in rail APU compressor profile bounded to its observed mode-conditioned signal envelopes.
+- Made severity control sampled communication loss, single-signal loss, quality degradation, and the blend strength of sensor-stuck effects; documented and tested those semantics.
+- Kept the generic compressor process model unchanged; the new MetroPT-specific profile does not claim unmeasured transient calibration.
+
 ## 0.3.1 — 2026-10-03
 
 - Prevent the Docker daemon from pulling submission images during evaluation; submissions must use a locally available image.

@@ -139,6 +139,8 @@ def simulate_step(
             "pressure_bar": _bounded(pressure + noise(0.12), 0, 30),
         }
     elif asset.asset_class == "compressor":
+        if asset.process_profile == "metropt3_rail_apu":
+            return _simulate_metropt3_rail_apu(state, regime, dt, ambient_c, rng)
         load = state.load
         state.temperature += (ambient_c + 80 * load - state.temperature) * (1 - np.exp(-dt / 120))
         discharge = ambient_c + 20 + 130 * load
@@ -162,6 +164,43 @@ def simulate_step(
             "load_pct": _bounded(100 * load + noise(1), 0, 100),
             "photoeye_rate": _bounded(180 * speed * load + noise(2), 0, 500),
         }
+    state.previous_signals = result.copy()
+    return result
+
+
+def _simulate_metropt3_rail_apu(
+    state: ProcessState,
+    regime: Regime,
+    dt: float,
+    ambient_c: float,
+    rng: np.random.Generator,
+) -> dict[str, float]:
+    """Illustrative APU profile bounded to MetroPT-3's observed envelopes.
+
+    Digital regimes stand in for the dataset's ambiguous COMP/DV state labels;
+    they do not claim to reconstruct the original control logic or dynamics.
+    """
+    loaded = regime in {"LOW_LOAD", "NORMAL_LOAD", "HIGH_LOAD"}
+    target_load = {"LOW_LOAD": 0.55, "NORMAL_LOAD": 0.72, "HIGH_LOAD": 0.82}.get(regime, 0.0)
+    alpha = 1 - np.exp(-max(dt, 0) / 8.0)
+    state.load += (target_load - state.load) * alpha
+    if loaded:
+        current = 4.76 + 1.44 * state.load + float(rng.normal(0, 0.35))
+        pressure_target = 7.79 + 2.264 * state.load
+    else:
+        current = 0.04 + float(rng.normal(0, 0.025))
+        pressure_target = 8.98
+    # The source supports observed oil-temperature envelopes, not a time constant.
+    # This deliberately slow illustrative response is configurable in a future schema.
+    state.temperature += (ambient_c + 43.9 - state.temperature) * (1 - np.exp(-max(dt, 0) / 900.0))
+    result = {
+        "motor_current_a": _bounded(current, 0, 10),
+        "oil_temperature_c": _bounded(state.temperature, 0, 110),
+        "discharge_temperature_c": _bounded(ambient_c + 20 + 80 * state.load + rng.normal(0, 0.5), 0, 160),
+        "pressure_bar": _bounded(pressure_target + rng.normal(0, 0.15), 0, 15),
+        "vibration_mm_s": _bounded(0.4 + 0.8 * state.load + rng.normal(0, 0.08), 0, 10),
+        "load_pct": _bounded(100 * state.load + rng.normal(0, 1), 0, 100),
+    }
     state.previous_signals = result.copy()
     return result
 

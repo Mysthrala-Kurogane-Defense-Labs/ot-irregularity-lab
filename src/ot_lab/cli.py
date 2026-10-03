@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from . import __version__
+from .calibration import write_metropt_analysis
 from .evaluation import evaluate
 from .simulation import batch, generate_challenge, read_scenario, replay, write_run
 from .submission import DEFAULT_MAX_OUTPUT_BYTES, run_docker_submission, run_submission
@@ -38,6 +39,11 @@ def main() -> None:
     create_cmd.add_argument("--seed", type=int, default=42)
     create_cmd.add_argument("--output", type=Path, required=True)
     create_cmd.add_argument("--resume", action="store_true", help="keep per-run checkpoints and resume after interruption")
+    calibration_cmd = commands.add_parser("calibration", help="analyze public reference data locally; source records are not copied")
+    calibration_sub = calibration_cmd.add_subparsers(dest="calibration_command", required=True)
+    metropt_cmd = calibration_sub.add_parser("analyze-metropt", help="summarize MetroPT-3 compressor modes and cadence")
+    metropt_cmd.add_argument("--input", type=Path, required=True, help="locally obtained MetroPT3(AirCompressor).csv")
+    metropt_cmd.add_argument("--output", type=Path, required=True, help="aggregate JSON report path")
     benchmark_cmd = commands.add_parser("benchmark", help="score model predictions for a generated run")
     benchmark_cmd.add_argument("--run", type=Path, required=True, help="run directory containing ground_truth.json")
     benchmark_cmd.add_argument("--predictions", type=Path, required=True, help="JSONL model output")
@@ -87,6 +93,8 @@ def main() -> None:
             parser.error("--runs must be positive")
         batch(args.suite, args.runs, args.output, args.seed, resume=getattr(args, "resume", False))
         print(args.output / "dataset_manifest.json")
+    elif args.command == "calibration":
+        print(write_metropt_analysis(args.input, args.output))
     elif args.command == "benchmark":
         result = evaluate(args.run / "ground_truth.json", args.predictions, args.output, args.threshold, args.overlap, args.run / "telemetry.parquet", args.run / "run_metadata.json")
         print(json.dumps({key: value for key, value in result.items() if key != "events"}, indent=2))
