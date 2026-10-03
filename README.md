@@ -30,6 +30,8 @@ The model input is `telemetry.parquet`; never pass `ground_truth.json` or `run_m
 
 Run a fresh Docker challenge with a separate hidden-case distribution: `uv run ot-lab challenge --suite suites/training-v0.2.yaml --challenge-suite suites/challenge-v0.1.yaml --image MODEL_IMAGE --output results/model-a`. Each invocation uses an OS-generated seed; suite definitions are public and scenario parameters are sampled afresh.
 
+Generate large train/validation/test datasets with deterministic process workers: `uv run ot-lab dataset create --suite suites/normal-operation-v0.1.yaml --runs 1000 --seed 424242 --workers 4 --output datasets/normal-v1`. The default worker count is one; see [BENCHMARK.md](BENCHMARK.md) for measured throughput and its limits.
+
 Optional protocol replay adapters are documented in [PROTOCOLS.md](PROTOCOLS.md). The core generator does not require protocol emulators.
 
 Current public-source calibration evidence and its limits are recorded in [CALIBRATION.md](CALIBRATION.md); process dynamics remain illustrative until independently calibrated.

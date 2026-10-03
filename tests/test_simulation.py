@@ -834,7 +834,7 @@ generation:
     checkpoint_dirs = [path for path in resumable.glob("*/train-*") if path.is_dir()]
     assert len(checkpoint_dirs) == 2
     monkeypatch.setattr(simulation, "write_run", original)
-    simulation.batch(suite, 8, resumable, seed=912, resume=True)
+    simulation.batch(suite, 8, resumable, seed=912, resume=True, workers=2)
     clean = tmp_path / "clean"
     simulation.batch(suite, 8, clean, seed=912)
     resumed_manifest = json.loads((resumable / "dataset_manifest.json").read_text())
@@ -845,6 +845,49 @@ generation:
         (run["run_id"], run["seed"], run["telemetry_sha256"]) for run in clean_manifest["runs"]
     ]
     assert not (resumable / ".resume.json").exists()
+
+
+def test_parallel_batch_matches_serial_runs_and_manifest(tmp_path):
+    from ot_lab.simulation import batch
+
+    suite = tmp_path / "suite.yaml"
+    suite.write_text("""suite_id: parallel-test
+suite_version: 1
+partitions: {train: 0.5, validation: 0.25, test: 0.25}
+scenario:
+  scenario_id: parallel-test
+  duration_s: 12
+  sampling_interval_ms: 1000
+  assets: [{asset_id: P-1, asset_class: pump}]
+generation:
+  vary: {ambient_temperature_c: {min: 18, max: 24}}
+""", encoding="utf-8")
+    serial = tmp_path / "serial"
+    parallel = tmp_path / "parallel"
+    batch(suite, 8, serial, seed=912)
+    batch(suite, 8, parallel, seed=912, workers=2)
+    serial_manifest = json.loads((serial / "dataset_manifest.json").read_text())
+    parallel_manifest = json.loads((parallel / "dataset_manifest.json").read_text())
+    assert [(run["run_id"], run["seed"], run["telemetry_sha256"], run["ground_truth_sha256"])
+            for run in serial_manifest["runs"]] == [
+        (run["run_id"], run["seed"], run["telemetry_sha256"], run["ground_truth_sha256"])
+        for run in parallel_manifest["runs"]
+    ]
+    for partition in ("train", "validation", "test"):
+        assert (serial / f"{partition}.parquet").read_bytes() == (parallel / f"{partition}.parquet").read_bytes()
+
+
+def test_batch_rejects_nonpositive_workers(tmp_path):
+    with pytest.raises(ValueError, match="workers must be positive"):
+        batch(Path("suites/training-v0.2.yaml"), 1, tmp_path / "dataset", seed=1, workers=0)
+
+
+def test_batch_rejects_workers_above_cpu_count(tmp_path, monkeypatch):
+    from ot_lab import simulation
+
+    monkeypatch.setattr(simulation.os, "cpu_count", lambda: 2)
+    with pytest.raises(ValueError, match="cannot exceed available CPU count"):
+        batch(Path("suites/training-v0.2.yaml"), 1, tmp_path / "dataset", seed=1, workers=3)
 
 
 def test_resumable_batch_rejects_changed_suite_or_seed(tmp_path):

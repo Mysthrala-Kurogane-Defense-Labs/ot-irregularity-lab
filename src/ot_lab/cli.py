@@ -31,6 +31,7 @@ def main() -> None:
     batch_cmd.add_argument("--runs", type=int, required=True)
     batch_cmd.add_argument("--seed", type=int, default=42)
     batch_cmd.add_argument("--output", type=Path, required=True)
+    batch_cmd.add_argument("--workers", type=int, default=1, help="parallel run-generation processes (default: 1)")
     dataset_cmd = commands.add_parser("dataset", help="create a seeded dataset from a generation suite")
     dataset_subcommands = dataset_cmd.add_subparsers(dest="dataset_command", required=True)
     create_cmd = dataset_subcommands.add_parser("create", help="generate train/validation/test runs and a manifest")
@@ -39,6 +40,7 @@ def main() -> None:
     create_cmd.add_argument("--seed", type=int, default=42)
     create_cmd.add_argument("--output", type=Path, required=True)
     create_cmd.add_argument("--resume", action="store_true", help="keep per-run checkpoints and resume after interruption")
+    create_cmd.add_argument("--workers", type=int, default=1, help="parallel run-generation processes (default: 1)")
     calibration_cmd = commands.add_parser("calibration", help="analyze public reference data locally; source records are not copied")
     calibration_sub = calibration_cmd.add_subparsers(dest="calibration_command", required=True)
     metropt_cmd = calibration_sub.add_parser("analyze-metropt", help="summarize MetroPT-3 compressor modes and cadence")
@@ -91,7 +93,7 @@ def main() -> None:
     elif args.command in {"batch", "dataset"}:
         if args.runs <= 0:
             parser.error("--runs must be positive")
-        batch(args.suite, args.runs, args.output, args.seed, resume=getattr(args, "resume", False))
+        batch(args.suite, args.runs, args.output, args.seed, resume=getattr(args, "resume", False), workers=args.workers)
         print(args.output / "dataset_manifest.json")
     elif args.command == "calibration":
         print(write_metropt_analysis(args.input, args.output))

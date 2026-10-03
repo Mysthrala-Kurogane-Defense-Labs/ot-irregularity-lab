@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import platform
+import shutil
 import tempfile
+from concurrent.futures import ProcessPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -552,22 +555,26 @@ def replay(run_dir: Path, output: Path | None = None) -> Path:
     return target
 
 
-def batch(suite_path: Path, runs: int, output: Path, seed: int, resume: bool = False) -> None:
+def batch(suite_path: Path, runs: int, output: Path, seed: int, resume: bool = False, workers: int = 1) -> None:
     if runs <= 0:
         raise ValueError("runs must be positive")
+    if workers <= 0:
+        raise ValueError("workers must be positive")
+    if workers > (os.cpu_count() or 1):
+        raise ValueError(f"workers cannot exceed available CPU count ({os.cpu_count() or 1})")
     if resume:
-        _resume_batch(suite_path, runs, output, seed)
+        _resume_batch(suite_path, runs, output, seed, workers)
         return
     if output.exists():
         raise FileExistsError(f"dataset output path must not already exist: {output}")
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=f".{output.name}.tmp-", dir=output.parent) as staging_root:
         staging_output = Path(staging_root) / output.name
-        _batch_to_directory(suite_path, runs, staging_output, seed, command_output=output)
+        _batch_to_directory(suite_path, runs, staging_output, seed, command_output=output, workers=workers)
         staging_output.replace(output)
 
 
-def _resume_batch(suite_path: Path, runs: int, output: Path, seed: int) -> None:
+def _resume_batch(suite_path: Path, runs: int, output: Path, seed: int, workers: int = 1) -> None:
     """Continue a checkpointed batch in deterministic run order; publish only when complete."""
     if runs <= 0:
         raise ValueError("runs must be positive")
@@ -584,12 +591,14 @@ def _resume_batch(suite_path: Path, runs: int, output: Path, seed: int) -> None:
     config_path = output / ".resume.json"
     if config_path.exists():
         existing = json.loads(config_path.read_text(encoding="utf-8"))
-        if existing != config:
+        if {key: value for key, value in existing.items() if key != "workers"} != config:
             raise ValueError("resume configuration differs from checkpoint; use a fresh output directory")
+        existing.setdefault("workers", workers)
+        config_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
     else:
         if any(output.iterdir()):
             raise FileExistsError(f"resume output contains files but no compatible checkpoint: {output}")
-        config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+        config_path.write_text(json.dumps({**config, "workers": workers}, indent=2) + "\n", encoding="utf-8")
     suite = yaml.safe_load(suite_path.read_text(encoding="utf-8"))
     partitions = suite.get("partitions", {"train": 0.7, "validation": 0.15, "test": 0.15})
     if "challenge" in {name.lower() for name in partitions}:
@@ -610,15 +619,15 @@ def _resume_batch(suite_path: Path, runs: int, output: Path, seed: int) -> None:
                 run_seed = int(seed_rng.integers(0, 2**63, dtype=np.int64))
             used_seeds.add(run_seed)
             run_specs.append((partition, index, f"{partition}-{index+1:05d}", run_seed))
+    tasks = []
     for partition, index, run_id, run_seed in run_specs:
         run_dir = output / partition / run_id
-        if (run_dir / "run_metadata.json").is_file() and (run_dir / "ground_truth.json").is_file() and (run_dir / "telemetry.parquet").is_file():
+        if all((run_dir / name).is_file() for name in ("run_metadata.json", "ground_truth.json", "telemetry.parquet", "scenario.yaml")):
             metadata = json.loads((run_dir / "run_metadata.json").read_text(encoding="utf-8"))
             if metadata.get("seed") != run_seed:
                 raise ValueError(f"checkpoint run seed mismatch: {run_dir}")
             continue
         if run_dir.exists():
-            import shutil
             shutil.rmtree(run_dir)
         local_rng = np.random.default_rng(run_seed)
         base = suite["scenario"]
@@ -628,12 +637,18 @@ def _resume_batch(suite_path: Path, runs: int, output: Path, seed: int) -> None:
         scenario_data = _resolve_ranges(scenario_data, local_rng)
         scenario_data["run_id"] = run_id
         scenario = Scenario.model_validate(resolve_profiles(scenario_data))
-        write_run(scenario, run_seed, run_dir)
+        tasks.append((scenario.model_dump(mode="json"), run_seed, str(run_dir)))
+    if workers == 1:
+        for task in tasks:
+            _write_batch_run(*task)
+    else:
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            list(executor.map(_write_batch_run_star, tasks, chunksize=max(1, len(tasks) // (workers * 4))))
     # Finalizing reuses the normal manifest and partition builder, then removes only temporary state.
-    _finalize_resumable_batch(suite_path, runs, output, seed)
+    _finalize_resumable_batch(suite_path, runs, output, seed, workers)
 
 
-def _finalize_resumable_batch(suite_path: Path, runs: int, output: Path, seed: int) -> None:
+def _finalize_resumable_batch(suite_path: Path, runs: int, output: Path, seed: int, workers: int = 1) -> None:
     """Build final files in a sibling staging directory, then atomically replace the checkpoint."""
     import shutil
 
@@ -650,6 +665,7 @@ def _finalize_resumable_batch(suite_path: Path, runs: int, output: Path, seed: i
         _batch_to_directory(
             suite_path, runs, staging, seed, command_output=output,
             resume_existing=True, dataset_id=output.name,
+            workers=workers,
         )
         (staging / ".resume.json").unlink(missing_ok=True)
         backup = output.with_name(f".{output.name}.checkpoint")
@@ -665,13 +681,29 @@ def _finalize_resumable_batch(suite_path: Path, runs: int, output: Path, seed: i
     finally:
         if staging.exists():
             shutil.rmtree(staging)
+
+
+def _write_batch_run(scenario_data: dict[str, Any], run_seed: int, run_dir_text: str) -> None:
+    """Write one isolated, already-resolved run; safe to dispatch to worker processes."""
+    scenario = Scenario.model_validate(scenario_data)
+    write_run(scenario, run_seed, Path(run_dir_text))
+
+
+def _write_batch_run_star(args: tuple[dict[str, Any], int, str]) -> None:
+    _write_batch_run(*args)
+
+
 def _batch_to_directory(
     suite_path: Path, runs: int, output: Path, seed: int,
     command_output: Path | None = None, resume_existing: bool = False,
-    dataset_id: str | None = None,
+    dataset_id: str | None = None, workers: int = 1,
 ) -> None:
     if runs <= 0:
         raise ValueError("runs must be positive")
+    if workers <= 0:
+        raise ValueError("workers must be positive")
+    if workers > (os.cpu_count() or 1):
+        raise ValueError(f"workers cannot exceed available CPU count ({os.cpu_count() or 1})")
     output.mkdir(parents=True, exist_ok=True)
     suite = yaml.safe_load(suite_path.read_text(encoding="utf-8"))
     base = suite["scenario"]
@@ -699,6 +731,7 @@ def _batch_to_directory(
     regime_distribution: dict[str, int] = {}
     regime_duration_s: dict[str, float] = {}
     observation_total = 0
+    tasks = []
     for partition, count in counts.items():
         for index in range(count):
             run_seed = int(seed_rng.integers(0, 2**63, dtype=np.int64))
@@ -716,32 +749,24 @@ def _batch_to_directory(
             scenario_data["run_id"] = run_id
             scenario = Scenario.model_validate(resolve_profiles(scenario_data))
             run_dir = output / partition / scenario.run_id
-            if resume_existing and (run_dir / "run_metadata.json").is_file() and (run_dir / "ground_truth.json").is_file() and (run_dir / "telemetry.parquet").is_file():
+            is_complete = all((run_dir / name).is_file() for name in ("run_metadata.json", "ground_truth.json", "telemetry.parquet", "scenario.yaml"))
+            if resume_existing and is_complete:
                 metadata = json.loads((run_dir / "run_metadata.json").read_text(encoding="utf-8"))
                 expected_hash = hashlib.sha256(json.dumps(scenario.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                 if metadata.get("seed") != run_seed or metadata.get("scenario_sha256") != expected_hash:
                     raise ValueError(f"checkpoint run does not match deterministic scenario: {run_dir}")
             else:
                 if run_dir.exists():
-                    import shutil
                     shutil.rmtree(run_dir)
-                write_run(scenario, run_seed, run_dir)
-                (run_dir / "scenario.yaml").write_text(yaml.safe_dump(scenario.model_dump(mode="json"), sort_keys=False), encoding="utf-8")
-            digest = hashlib.sha256((run_dir / "telemetry.parquet").read_bytes()).hexdigest()
+                tasks.append((scenario.model_dump(mode="json"), run_seed, str(run_dir)))
             manifest_runs.append({
                 "partition": partition, "run_id": scenario.run_id, "seed": run_seed,
-                "telemetry_sha256": digest, "scenario_id": scenario.scenario_id,
+                "scenario_id": scenario.scenario_id,
                 "scenario_version": scenario.scenario_version,
                 "asset_ids": [asset.asset_id for asset in scenario.assets],
                 "asset_classes": [asset.asset_class for asset in scenario.assets],
                 "configured_shift_pattern": scenario.shift_pattern,
             })
-            run_meta = json.loads((run_dir / "run_metadata.json").read_text(encoding="utf-8"))
-            manifest_runs[-1]["observation_count"] = run_meta["observation_count"]
-            manifest_runs[-1]["scenario_sha256"] = run_meta["scenario_sha256"]
-            manifest_runs[-1]["ground_truth_sha256"] = hashlib.sha256((run_dir / "ground_truth.json").read_bytes()).hexdigest()
-            manifest_runs[-1]["metadata_sha256"] = hashlib.sha256((run_dir / "run_metadata.json").read_bytes()).hexdigest()
-            observation_total += run_meta["observation_count"]
             sample_class = "anomalous" if scenario.anomalies else "normal"
             class_distribution[sample_class] += 1
             partition_class_distribution[partition][sample_class] += 1
@@ -751,12 +776,28 @@ def _batch_to_directory(
                 partition_events[anomaly.type] = partition_events.get(anomaly.type, 0) + 1
             for asset in scenario.assets:
                 asset_distribution[asset.asset_class] = asset_distribution.get(asset.asset_class, 0) + 1
-            truth = json.loads((run_dir / "ground_truth.json").read_text(encoding="utf-8"))
-            for interval in truth.get("operating_regimes", []):
-                regime = interval["regime"]
-                regime_distribution[regime] = regime_distribution.get(regime, 0) + 1
-                elapsed = (datetime.fromisoformat(interval["end"]) - datetime.fromisoformat(interval["start"])).total_seconds()
-                regime_duration_s[regime] = regime_duration_s.get(regime, 0.0) + max(0.0, elapsed)
+    if tasks:
+        if workers == 1:
+            for scenario_data, run_seed, run_dir_text in tasks:
+                _write_batch_run(scenario_data, run_seed, run_dir_text)
+        else:
+            with ProcessPoolExecutor(max_workers=workers) as executor:
+                list(executor.map(_write_batch_run_star, tasks, chunksize=max(1, len(tasks) // (workers * 4))))
+    for run in manifest_runs:
+        run_dir = output / run["partition"] / run["run_id"]
+        run_meta = json.loads((run_dir / "run_metadata.json").read_text(encoding="utf-8"))
+        run["observation_count"] = run_meta["observation_count"]
+        run["scenario_sha256"] = run_meta["scenario_sha256"]
+        run["ground_truth_sha256"] = hashlib.sha256((run_dir / "ground_truth.json").read_bytes()).hexdigest()
+        run["metadata_sha256"] = hashlib.sha256((run_dir / "run_metadata.json").read_bytes()).hexdigest()
+        run["telemetry_sha256"] = hashlib.sha256((run_dir / "telemetry.parquet").read_bytes()).hexdigest()
+        observation_total += run_meta["observation_count"]
+        truth = json.loads((run_dir / "ground_truth.json").read_text(encoding="utf-8"))
+        for interval in truth.get("operating_regimes", []):
+            regime = interval["regime"]
+            regime_distribution[regime] = regime_distribution.get(regime, 0) + 1
+            elapsed = (datetime.fromisoformat(interval["end"]) - datetime.fromisoformat(interval["start"])).total_seconds()
+            regime_duration_s[regime] = regime_duration_s.get(regime, 0.0) + max(0.0, elapsed)
     partition_files: dict[str, dict[str, Any]] = {}
     for partition in partitions:
         partition_runs = [run for run in manifest_runs if run["partition"] == partition]
@@ -780,9 +821,10 @@ def _batch_to_directory(
         "suite_sha256": hashlib.sha256(suite_path.read_bytes()).hexdigest(),
         "simulator_version": __version__, "schema_version": SCHEMA_VERSION,
         "ground_truth_schema_version": GROUND_TRUTH_SCHEMA_VERSION, "master_seed": seed,
+        "generation_workers": workers,
         "generator_argv": [
             "uv", "run", "ot-lab", "dataset", "create", "--suite", str(suite_path),
-            "--runs", str(runs), "--seed", str(seed), "--output", str(command_output or output),
+            "--runs", str(runs), "--seed", str(seed), "--workers", str(workers), "--output", str(command_output or output),
         ],
         "uv_lock_sha256": hashlib.sha256(lockfile.read_bytes()).hexdigest() if lockfile.is_file() else None,
         "runtime": {"python": platform.python_version(), "numpy": np.__version__, "polars": pl.__version__},
