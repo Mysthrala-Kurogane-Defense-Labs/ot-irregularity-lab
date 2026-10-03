@@ -11,7 +11,7 @@ Create a reproducible aggregate-only inspection of the openly licensed Bosch CNC
 - Files and bytes analyzed: 1,702 HDF5 segments; 952,229,265 bytes.
 - Input manifest SHA-256: `355dc601413254f0a4079696a12714b77a08a502ab4e0a1ef7d71508a0aa48e8`. It hashes the sorted relative paths and each file's SHA-256.
 - Command: `uv run ot-lab calibration analyze-bosch-cnc --input-dir <CNC_Machining/data> --source-revision d60581d6a3ab6015dcc5488c3d76112bb8e1bcb1 --output calibration/bosch-cnc-summary.json`.
-- Aggregate report SHA-256: `4e0133b78dd94ef861b6065cce358a68d4d9367726f559df272a4998799d1c9c`.
+- Aggregate report SHA-256: `35e78bc13b3ecd7a6d7d78d3fa3f78be3c713aad7c11e52295b4152b55463e2e` (UTF-8 with LF line endings for cross-platform byte identity).
 - The report contains per-machine, operation, source-label, and timeframe quantiles for segment duration and three-axis/resultant RMS; it contains no source arrays or per-segment measurements.
 
 ## Findings and limits
@@ -29,4 +29,4 @@ During retrieval, a sparse Git checkout stalled while fetching the dataset blobs
 - Windows Python 3.12 with `uv sync --extra dev --extra calibration --extra opcua --extra modbus --group lint`: 135 tests passed, Ruff passed, `uv lock --check` passed, and `git diff --check` passed.
 - WSL/Linux Python 3.12 with the same extras: 134 tests passed, one platform-specific test skipped, Ruff and `uv lock --check` passed.
 - Calibration tests: 6 passed on Windows Python 3.12 with the optional `calibration` extra.
-- Re-running the CLI against the full downloaded source reproduced the committed report byte-for-byte with the same SHA-256.
+- Re-running the CLI against the full downloaded source on Windows and WSL/Linux reproduced the committed report byte-for-byte with the same SHA-256.

@@ -370,5 +370,5 @@ def analyze_bosch_cnc(input_dir: Path, source_revision: str | None = None) -> di
 def write_bosch_cnc_analysis(input_dir: Path, output_path: Path, source_revision: str | None = None) -> Path:
     report = analyze_bosch_cnc(input_dir, source_revision)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    output_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     return output_path

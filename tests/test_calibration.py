@@ -99,6 +99,7 @@ def test_bosch_cnc_analysis_emits_source_group_aggregates_only(tmp_path):
     assert "source samples" in " ".join(report["interpretation"])
     output = write_bosch_cnc_analysis(tmp_path, tmp_path / "report.json", "test-revision")
     assert json.loads(output.read_text(encoding="utf-8"))["source"]["source_revision"] == "test-revision"
+    assert b"\r\n" not in output.read_bytes()
 
 
 def test_bosch_cnc_analysis_rejects_unexpected_hdf5_paths(tmp_path):
