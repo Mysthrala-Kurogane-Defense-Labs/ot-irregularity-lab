@@ -779,8 +779,7 @@ def test_docker_submission_passes_only_minimal_environment(tmp_path, monkeypatch
             captured["args"] = args
             Path(args[args.index("--cidfile") + 1]).write_text("fake-container-id")
             mount_arg = args[args.index("--mount", args.index("--mount") + 1) + 1]
-            host_dir = Path(mount_arg.split("src=", 1)[1].split(",dst=", 1)[0])
-            (host_dir / "output.jsonl").write_text("{}\n")
+            Path(mount_arg.split("src=", 1)[1].split(",dst=", 1)[0]).write_text("{}\n")
 
         def poll(self):
             return self.returncode
@@ -813,7 +812,10 @@ def test_docker_submission_passes_only_minimal_environment(tmp_path, monkeypatch
     assert "--env" in command and "OT_LAB_INPUT=/ot-lab/input.parquet" in command
     mounts = [command[i + 1] for i, item in enumerate(command[:-1]) if item == "--mount"]
     assert len(mounts) == 2
-    assert all("ground_truth" not in mount for mount in mounts)
+    assert all("ground_truth" not in mount and "run_metadata" not in mount and "scenario" not in mount for mount in mounts)
+    assert all(",dst=" in mount and "type=bind" in mount for mount in mounts)
+    assert any("dst=/ot-lab/input.parquet,readonly" in mount for mount in mounts)
+    assert any("dst=/ot-lab/output.jsonl" in mount for mount in mounts)
     assert "GH_TOKEN" not in [command[i + 1] for i, item in enumerate(command[:-1]) if item == "--env"]
     assert removed and removed[0][-1] == "fake-container-id"
 
@@ -830,8 +832,7 @@ def test_docker_submission_enforces_prediction_size_limit(tmp_path, monkeypatch)
         def __init__(self, args, **_kwargs):
             Path(args[args.index("--cidfile") + 1]).write_text("fake-container-id")
             mount_arg = args[args.index("--mount", args.index("--mount") + 1) + 1]
-            host_dir = Path(mount_arg.split("src=", 1)[1].split(",dst=", 1)[0])
-            (host_dir / "output.jsonl").write_text("x" * 101)
+            Path(mount_arg.split("src=", 1)[1].split(",dst=", 1)[0]).write_text("x" * 101)
 
         def poll(self): return self.returncode
         def wait(self): return self.returncode

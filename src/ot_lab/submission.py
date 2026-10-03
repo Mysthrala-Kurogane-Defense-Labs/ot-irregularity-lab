@@ -95,16 +95,15 @@ def run_docker_submission(image: str, run_dir: Path, output: Path, timeout_s: in
     telemetry = (run_dir / "telemetry.parquet").resolve()
     if not telemetry.is_file():
         raise FileNotFoundError(telemetry)
-    output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="ot-lab-docker-") as tmp:
         sandbox = Path(tmp).resolve()
         input_path = sandbox / "input.parquet"
-        output_dir = sandbox / "out"
-        output_dir.mkdir()
-        output_path = output_dir / "output.jsonl"
+        mounted_output = sandbox / "output.jsonl"
+        output_path = sandbox / "container-output.jsonl"
         cid_path = sandbox / "container.cid"
         input_path.write_bytes(telemetry.read_bytes())
-        output_mount = f"type=bind,src={output_dir},dst=/ot-lab/out"
+        # Mount a single output file, not a host directory that may contain ground truth.
+        mounted_output.touch()
         args = [
             docker, "run", "--cidfile", str(cid_path), "--pull=never", "--rm", "--network=none", "--read-only", "--cap-drop=ALL",
             "--security-opt=no-new-privileges:true", "--pids-limit=128", "--memory=2g",
@@ -112,8 +111,8 @@ def run_docker_submission(image: str, run_dir: Path, output: Path, timeout_s: in
             "--env", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "--env", "TMPDIR=/tmp",
             "--mount", f"type=bind,src={input_path},dst=/ot-lab/input.parquet,readonly",
-            "--mount", output_mount,
-            "--env", "OT_LAB_INPUT=/ot-lab/input.parquet", "--env", "OT_LAB_OUTPUT=/ot-lab/out/output.jsonl",
+            "--mount", f"type=bind,src={mounted_output},dst=/ot-lab/output.jsonl",
+            "--env", "OT_LAB_INPUT=/ot-lab/input.parquet", "--env", "OT_LAB_OUTPUT=/ot-lab/output.jsonl",
             image,
         ]
         try:
@@ -123,9 +122,10 @@ def run_docker_submission(image: str, run_dir: Path, output: Path, timeout_s: in
                 container_id = cid_path.read_text(encoding="utf-8").strip()
                 if container_id:
                     subprocess.run([docker, "rm", "--force", container_id], timeout=30, check=False, capture_output=True)
-        if not output_path.is_file():
-            raise FileNotFoundError("container did not create /ot-lab/out/output.jsonl")
-        if output_path.stat().st_size > max_output_bytes:
+        if not mounted_output.is_file():
+            raise FileNotFoundError("container did not write the mounted /ot-lab/output.jsonl file")
+        if mounted_output.stat().st_size > max_output_bytes:
             raise ValueError(f"submission output exceeds {max_output_bytes} bytes")
-        output.write_bytes(output_path.read_bytes())
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(mounted_output.read_bytes())
     return output
