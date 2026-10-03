@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import multiprocessing
 import os
 import platform
 import shutil
@@ -642,7 +643,7 @@ def _resume_batch(suite_path: Path, runs: int, output: Path, seed: int, workers:
         for task in tasks:
             _write_batch_run(*task)
     else:
-        with ProcessPoolExecutor(max_workers=workers) as executor:
+        with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("spawn")) as executor:
             list(executor.map(_write_batch_run_star, tasks, chunksize=max(1, len(tasks) // (workers * 4))))
     # Finalizing reuses the normal manifest and partition builder, then removes only temporary state.
     _finalize_resumable_batch(suite_path, runs, output, seed, workers)
@@ -781,7 +782,7 @@ def _batch_to_directory(
             for scenario_data, run_seed, run_dir_text in tasks:
                 _write_batch_run(scenario_data, run_seed, run_dir_text)
         else:
-            with ProcessPoolExecutor(max_workers=workers) as executor:
+            with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("spawn")) as executor:
                 list(executor.map(_write_batch_run_star, tasks, chunksize=max(1, len(tasks) // (workers * 4))))
     for run in manifest_runs:
         run_dir = output / run["partition"] / run["run_id"]

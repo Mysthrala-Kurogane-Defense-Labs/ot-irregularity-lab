@@ -2,6 +2,7 @@
 
 - 2026-10-03 — [Normal process variation](runs/2026-10-03-normal-process-variation.md): randomized per-asset load setpoint, response time, and sensor-noise values with event-free 30-seed verification.
 - 2026-10-03 — [Parallel run generation](runs/2026-10-03-parallel-run-generation.md): deterministic `--workers` support, byte-identical partitions, cross-worker resume, and measured 60-run throughput.
+- 2026-10-03 — [Linux process-pool deadlock](runs/2026-10-03-linux-process-pool.md): replaced fork with spawn after a reproducible post-Polars worker hang; Linux WSL full suite passed after the fix.
 - 2026-10-03 — [Deterministic partition packaging](runs/2026-10-03-partition-packaging.md): separate train/validation/test ZIPs with verified hashes, explicit license notices, and seed-free release manifests.
 - 2026-10-03 — [MetroPT-3 calibration and severity semantics](runs/2026-10-03-metropt-calibration.md): full reference CSV integrity and aggregate analysis, opt-in rail APU profile, and severity behavior tests.
 - 2026-10-03 — [Challenge container end-to-end smoke](runs/2026-10-03-challenge-container-smoke.md): single-file mounts and full short challenge verified with local Docker; container change published in `c34cb6c`, normal suite in `c30ea85`, both CI runs passed.

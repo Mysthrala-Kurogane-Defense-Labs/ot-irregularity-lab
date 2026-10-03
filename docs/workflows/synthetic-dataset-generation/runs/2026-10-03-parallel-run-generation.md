@@ -4,6 +4,8 @@
 
 Added `--workers N` to `ot-lab batch` and `ot-lab dataset create`. Each worker receives an already seed-resolved scenario and writes only its own run directory. The parent process builds manifests and partition Parquet files in stable order after all workers finish. The default remains one worker. Worker count is recorded in the manifest and resumable checkpoint; a checkpoint can resume with a different worker count because it does not affect the seed plan or run outputs. Counts must be positive and no greater than the host-reported CPU count.
 
+Workers use Python's `spawn` multiprocessing context rather than the platform default. Linux validation exposed a fork-after-NumPy/Polars-thread-pool hang in a parallel-batch test; `spawn` avoids inheriting those process-local locks while preserving the deterministic run plan.
+
 ## Validation
 
 - 60 runs, normal-operation suite, seed 4242: one process 7.79 s (7.71 runs/s), two processes 5.15 s (11.66 runs/s), four processes 4.34 s (13.83 runs/s).

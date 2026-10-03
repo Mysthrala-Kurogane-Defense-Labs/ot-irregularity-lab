@@ -660,12 +660,12 @@ def test_discrete_effect_severity_scales_effect_frequency(kind):
     observed = []
     for severity in (0.0, 0.25, 0.5, 1.0):
         affected_total = 0
+        event = Anomaly(
+            type=kind, asset="P-1", start=0, duration=10,
+            severity=severity,
+            parameters={"loss_pct": 80, "tag_selection": "single"} if kind == "single_signal_loss" else {"loss_pct": 80},
+        )
         for sample_index in range(2000):
-            event = Anomaly(
-                type=kind, asset="P-1", start=0, duration=10,
-                severity=severity,
-                parameters={"loss_pct": 80, "tag_selection": "single"} if kind == "single_signal_loss" else {"loss_pct": 80},
-            )
             _row, affected, quality = _affect(
                 event, signals.copy(), 1,
                 {"process": ProcessState(temperature=20)}, "pump", sample_index, 123,
