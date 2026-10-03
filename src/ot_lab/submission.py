@@ -77,6 +77,9 @@ def run_submission(command: str, run_dir: Path, output: Path, timeout_s: int = 3
             "PATH": os.environ.get("PATH", ""), "TEMP": str(sandbox), "TMP": str(sandbox),
             "OT_LAB_INPUT": str(input_path), "OT_LAB_OUTPUT": str(predictions_path),
         }
+        for key in ("SystemRoot", "WINDIR", "COMSPEC", "PATHEXT"):
+            if key in os.environ:
+                env[key] = os.environ[key]
         _run_bounded(argv, cwd=sandbox, env=env, timeout_s=timeout_s, max_output_bytes=max_output_bytes, monitored_output=predictions_path)
         if not predictions_path.is_file():
             raise FileNotFoundError("model command did not create {output}")

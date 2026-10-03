@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
@@ -1016,6 +1017,21 @@ def test_run_submission_exposes_only_temporary_input(tmp_path):
     cmd = "python -c \"import pathlib,os; pathlib.Path(os.environ['OT_LAB_OUTPUT']).write_text('{}\\n')\""
     result = run_submission(cmd, run_dir, out)
     assert result.read_text() == "{}\n"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows subprocesses require SystemRoot for Winsock")
+def test_run_submission_preserves_windows_system_environment(tmp_path):
+    run_dir = tmp_path / "run"
+    write_run(fixture_scenario(), 3, run_dir)
+    script = tmp_path / "winsock_model.py"
+    script.write_text('''import socket, sys
+from pathlib import Path
+socket.getaddrinfo("localhost", 80)
+Path(sys.argv[2]).write_text("{}\\n", encoding="utf-8")
+''', encoding="utf-8")
+    command = f'"{sys.executable}" "{script}" {{input}} {{output}}'
+    result = run_submission(command, run_dir, tmp_path / "winsock.jsonl")
+    assert result.read_text(encoding="utf-8") == "{}\n"
 
 
 def test_independent_external_commands_run_and_compare_without_importing_lab(tmp_path, monkeypatch):
