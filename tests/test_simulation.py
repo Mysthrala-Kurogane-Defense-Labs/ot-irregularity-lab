@@ -393,6 +393,45 @@ def test_normal_suite_samples_reproducible_process_variation_ranges():
     assert first == second
 
 
+def test_false_positive_stress_suite_samples_event_free_normal_transitions():
+    import yaml
+
+    from ot_lab.simulation import _resolve_ranges
+
+    suite = yaml.safe_load(Path("suites/false-positive-stress-v0.1.yaml").read_text(encoding="utf-8"))
+    patterns = set()
+    sampled_assets = set()
+    for seed in range(120):
+        rng = np.random.default_rng(seed)
+        data = _generate_suite_scenario(suite["scenario"], suite["generation"], rng, f"fp-{seed}")
+        data = _resolve_ranges(data, rng)
+        scenario = Scenario.model_validate(data)
+        assert scenario.anomalies == []
+        patterns.add(tuple(scenario.shift_pattern))
+        sampled_assets.update(asset.asset_class for asset in scenario.assets)
+        assert 600 <= scenario.duration_s <= 2400
+        assert -5 <= scenario.ambient_temperature_c <= 38
+        assert all(0 <= asset.process_parameters["initial_temperature_offset_c"] <= 25 for asset in scenario.assets)
+    assert len(patterns) >= 5
+    assert {"cnc", "pump"}.issubset(sampled_assets)
+    assert any("MAINTENANCE" in pattern for pattern in patterns)
+    assert any("OFF" in pattern for pattern in patterns)
+
+
+def test_warm_start_asset_begins_above_ambient_temperature():
+    scenario = Scenario.model_validate({
+        "scenario_id": "warm-start", "run_id": "warm-start-1", "duration_s": 30,
+        "ambient_temperature_c": 10,
+        "assets": [{
+            "asset_id": "PUMP-01", "asset_class": "pump",
+            "process_parameters": {"initial_temperature_offset_c": 20.0},
+        }],
+    })
+    telemetry, _, _ = simulate(scenario, 77)
+    first = telemetry.filter(pl.col("tag_id") == "motor_temperature_c").sort("timestamp").select(pl.col("value").first()).item()
+    assert first > scenario.ambient_temperature_c
+
+
 def test_randomized_training_dataset_has_mixed_faults_and_auditable_partitions(tmp_path):
     import yaml
 

@@ -1,0 +1,42 @@
+suite_id: ot-irregularity-false-positive-stress
+suite_version: 0.1.0
+data_license: CC-BY-4.0
+description: >-
+  Event-free stress distribution with cold and warm starts, abrupt recipe and load
+  changes, maintenance, shutdown/restart, environmental shifts and sampling jitter.
+  These are expected normal transitions; no anomaly templates are present.
+partitions:
+  train: 0.70
+  validation: 0.15
+  test: 0.15
+scenario:
+  scenario_id: normal-false-positive-stress
+  scenario_version: 1.0.0
+  run_id: generated
+  duration_s: 900
+  sampling_interval_ms: 1000
+  ambient_temperature_c: 22
+  assets:
+    - {asset_id: CNC-01, asset_class: cnc}
+generation:
+  anomaly_probability: 0.0
+  vary:
+    duration_s: {min: 600, max: 2400}
+    sampling_interval_ms: {choices: [500, 1000, 2000]}
+    sampling_jitter_ms: {min: 0, max: 80}
+    ambient_temperature_c: {min: -5, max: 38}
+    ambient_temperature_drift_c: {min: -10, max: 10}
+    expose_operating_regime: {choices: [true, false]}
+  asset_profiles:
+    - {profile_id: cnc-cold-start, weight: 2, assets: [{asset_id: CNC-01, asset_class: cnc, process_parameters: {initial_temperature_offset_c: {min: 0, max: 2}, load_scale: {min: 0.85, max: 1.15}, actuator_tau_s: {min: 0.8, max: 3.5}, sensor_noise_scale: {min: 0.8, max: 1.25}, thermal_time_constant_scale: {min: 0.75, max: 1.4}}}]}
+    - {profile_id: cnc-warm-start, weight: 1, assets: [{asset_id: CNC-01, asset_class: cnc, process_parameters: {initial_temperature_offset_c: {min: 12, max: 25}, load_scale: {min: 0.85, max: 1.15}, actuator_tau_s: {min: 0.8, max: 3.5}, sensor_noise_scale: {min: 0.8, max: 1.25}, thermal_time_constant_scale: {min: 0.75, max: 1.4}}}]}
+    - {profile_id: pump-cold-start, weight: 2, assets: [{asset_id: PUMP-01, asset_class: pump, process_parameters: {initial_temperature_offset_c: {min: 0, max: 2}, load_scale: {min: 0.85, max: 1.15}, actuator_tau_s: {min: 0.8, max: 3.5}, sensor_noise_scale: {min: 0.8, max: 1.25}, thermal_time_constant_scale: {min: 0.75, max: 1.4}}}]}
+    - {profile_id: pump-warm-start, weight: 1, assets: [{asset_id: PUMP-01, asset_class: pump, process_parameters: {initial_temperature_offset_c: {min: 12, max: 25}, load_scale: {min: 0.85, max: 1.15}, actuator_tau_s: {min: 0.8, max: 3.5}, sensor_noise_scale: {min: 0.8, max: 1.25}, thermal_time_constant_scale: {min: 0.75, max: 1.4}}}]}
+    - {profile_id: mixed-plant, weight: 1, assets: [{asset_id: CNC-01, asset_class: cnc, process_parameters: {initial_temperature_offset_c: {min: 0, max: 25}, load_scale: {min: 0.85, max: 1.15}, actuator_tau_s: {min: 0.8, max: 3.5}, sensor_noise_scale: {min: 0.8, max: 1.25}, thermal_time_constant_scale: {min: 0.75, max: 1.4}}, regimes: ["OFF", IDLE, WARMUP, LOW_LOAD, NORMAL_LOAD, HIGH_LOAD, COOLDOWN, MAINTENANCE]}, {asset_id: PUMP-01, asset_class: pump, process_parameters: {initial_temperature_offset_c: {min: 0, max: 25}, load_scale: {min: 0.85, max: 1.15}, actuator_tau_s: {min: 0.8, max: 3.5}, sensor_noise_scale: {min: 0.8, max: 1.25}, thermal_time_constant_scale: {min: 0.75, max: 1.4}}, regimes: ["OFF", IDLE, WARMUP, LOW_LOAD, NORMAL_LOAD, HIGH_LOAD, COOLDOWN, MAINTENANCE]}]}
+  regime_profiles:
+    - {profile_id: rapid-load-recipe-change, weight: 3, shift_pattern: [LOW_LOAD, HIGH_LOAD, LOW_LOAD, HIGH_LOAD, NORMAL_LOAD]}
+    - {profile_id: sustained-high-load, weight: 1, shift_pattern: [HIGH_LOAD, HIGH_LOAD, HIGH_LOAD, NORMAL_LOAD]}
+    - {profile_id: recipe-change, weight: 2, shift_pattern: [NORMAL_LOAD, LOW_LOAD, NORMAL_LOAD, HIGH_LOAD, NORMAL_LOAD]}
+    - {profile_id: planned-maintenance, weight: 2, shift_pattern: [NORMAL_LOAD, HIGH_LOAD, MAINTENANCE, IDLE, WARMUP, NORMAL_LOAD]}
+    - {profile_id: stop-restart-shutdown, weight: 2, shift_pattern: [LOW_LOAD, NORMAL_LOAD, "OFF", IDLE, WARMUP, NORMAL_LOAD, COOLDOWN, "OFF"]}
+    - {profile_id: cold-start-shutdown, weight: 1, shift_pattern: ["OFF", WARMUP, LOW_LOAD, NORMAL_LOAD, COOLDOWN, "OFF"]}

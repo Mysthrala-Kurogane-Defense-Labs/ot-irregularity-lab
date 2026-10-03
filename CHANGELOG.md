@@ -6,6 +6,7 @@
 - Made severity control sampled communication loss, single-signal loss, quality degradation, and the blend strength of sensor-stuck effects; documented and tested those semantics.
 - Added versioned, scenario-recorded numeric overrides for the MetroPT rail APU process profile, with validation for unsupported/non-finite parameters and invalid time constants.
 - Added reproducible normal-run variation for per-asset load setpoint, actuator/thermal response, and sensor noise; resolved values are preserved for replay and dataset manifests.
+- Added a false-positive stress suite for event-free cold/warm starts, load/recipe changes, high load, maintenance, restart/shutdown, environmental shifts, and network-like sampling jitter.
 - Kept the generic compressor process model unchanged; the new MetroPT-specific profile does not claim unmeasured transient calibration.
 
 ## 0.3.1 — 2026-10-03

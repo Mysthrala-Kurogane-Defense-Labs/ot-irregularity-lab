@@ -420,7 +420,12 @@ def simulate(scenario: Scenario, seed: int) -> tuple[pl.DataFrame, dict[str, Any
         affected_by_event[f"evt-{index}"] = set()
     step_ms = scenario.sampling_interval_ms
     n_steps = int(scenario.duration_s * 1000 / step_ms)
-    states = {asset.asset_id: ProcessState(temperature=scenario.ambient_temperature_c) for asset in scenario.assets}
+    states = {
+        asset.asset_id: ProcessState(
+            temperature=scenario.ambient_temperature_c + asset.process_parameters.get("initial_temperature_offset_c", 0.0)
+        )
+        for asset in scenario.assets
+    }
     previous_sample_ms: dict[tuple[str, str], float] = {}
     timestamp_ms = 0.0
     for step in range(n_steps):

@@ -66,7 +66,7 @@ class AssetSpec(BaseModel):
             "oil_thermal_tau_s", "discharge_temperature_rise_c", "discharge_noise_c",
             "vibration_base_mm_s", "vibration_load_gain_mm_s", "vibration_noise_mm_s",
         }
-        generic_parameters = {"load_scale", "actuator_tau_s", "thermal_time_constant_scale", "sensor_noise_scale"}
+        generic_parameters = {"load_scale", "actuator_tau_s", "thermal_time_constant_scale", "sensor_noise_scale", "initial_temperature_offset_c"}
         allowed = rail_apu_parameters if profile == "metropt3_rail_apu" else generic_parameters
         unknown = set(value) - allowed
         if unknown:
@@ -78,6 +78,10 @@ class AssetSpec(BaseModel):
                 raise ValueError(f"{key} must be positive")
             if key.endswith("_scale") and parameter <= 0:
                 raise ValueError(f"{key} must be positive")
+            if key == "load_scale" and parameter > 1.5:
+                raise ValueError("load_scale must not exceed 1.5")
+            if key == "initial_temperature_offset_c" and not -30 <= parameter <= 50:
+                raise ValueError("initial_temperature_offset_c must be within -30..50 C")
             if key.endswith(("noise_a", "noise_bar", "noise_c", "noise_mm_s")) and parameter < 0:
                 raise ValueError(f"{key} must be non-negative")
         return value
