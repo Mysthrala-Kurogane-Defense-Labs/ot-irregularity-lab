@@ -13,3 +13,5 @@
 - 2026-10-03 — [OT Irregularity Training Dataset v0.3.0, 1,000 runs](runs/2026-10-03-training-v0.3-1000.md): published under CC BY 4.0; the public archive download matched its recorded SHA-256.
 - 2026-10-03 — [OT Irregularity Training Dataset v0.4.0, 1,000 runs](runs/2026-10-03-training-v0.4-1000.md): generated with 15 event types and four asset classes; telemetry and independent label archives built and locally verified under CC BY 4.0.
 - 2026-10-03 — [OT Irregularity Training Dataset v0.2.0, 1,000 runs](runs/2026-10-03-training-v0.2-1000.md): generated, locally validated, and published under CC BY 4.0; archive SHA-256 is in the run record.
+- 2026-10-04 — [Security review and remediations](runs/2026-10-04-security-review-and-remediations.md): scoped audit of all 12 source modules; fixed package-manifest path traversal and unescaped benchmark HTML, with Windows and WSL validation.
+- 2026-10-04 — [UCI ZeMA hydraulic aggregate analysis](runs/2026-10-04-zema-hydraulic-analysis.md): added reproducible archive analyzer and aggregate-only report; isolated-condition observations inform scenario design but do not calibrate generic PUMP-01.

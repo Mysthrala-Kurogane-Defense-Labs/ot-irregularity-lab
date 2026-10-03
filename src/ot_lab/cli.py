@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from . import __version__
-from .calibration import write_metropt_analysis
+from .calibration import write_metropt_analysis, write_zema_hydraulic_analysis
 from .datasets import package_dataset
 from .evaluation import evaluate
 from .simulation import batch, generate_challenge, read_scenario, replay, write_run
@@ -54,6 +54,9 @@ def main() -> None:
     metropt_cmd = calibration_sub.add_parser("analyze-metropt", help="summarize MetroPT-3 compressor modes and cadence")
     metropt_cmd.add_argument("--input", type=Path, required=True, help="locally obtained MetroPT3(AirCompressor).csv")
     metropt_cmd.add_argument("--output", type=Path, required=True, help="aggregate JSON report path")
+    hydraulic_cmd = calibration_sub.add_parser("analyze-hydraulic", help="summarize UCI ZeMA hydraulic test-rig cycles by condition")
+    hydraulic_cmd.add_argument("--input", type=Path, required=True, help="locally obtained UCI dataset 447 ZIP archive")
+    hydraulic_cmd.add_argument("--output", type=Path, required=True, help="aggregate JSON report path")
     benchmark_cmd = commands.add_parser("benchmark", help="score model predictions for a generated run")
     benchmark_cmd.add_argument("--run", type=Path, required=True, help="run directory containing ground_truth.json")
     benchmark_cmd.add_argument("--predictions", type=Path, required=True, help="JSONL model output")
@@ -113,7 +116,10 @@ def main() -> None:
     elif args.command == "dataset" and args.dataset_command == "package":
         print(package_dataset(args.dataset, args.dataset_version, args.output, args.license_file, args.data_license, args.partitions))
     elif args.command == "calibration":
-        print(write_metropt_analysis(args.input, args.output))
+        if args.calibration_command == "analyze-metropt":
+            print(write_metropt_analysis(args.input, args.output))
+        elif args.calibration_command == "analyze-hydraulic":
+            print(write_zema_hydraulic_analysis(args.input, args.output))
     elif args.command == "benchmark":
         result = evaluate(args.run / "ground_truth.json", args.predictions, args.output, args.threshold, args.overlap, args.run / "telemetry.parquet", args.run / "run_metadata.json")
         print(json.dumps({key: value for key, value in result.items() if key != "events"}, indent=2))

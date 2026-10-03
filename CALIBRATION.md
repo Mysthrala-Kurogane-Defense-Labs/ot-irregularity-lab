@@ -36,9 +36,27 @@ The opt-in `process_profile: metropt3_rail_apu` uses these state-conditioned cur
 
 The manufacturer [Atlas Copco GA 11⁺–30 50 Hz datasheet](https://www.atlascopco.com/content/dam/atlas-copco/compressor-technique/industrial-air/documents/leaflets/compressors/ga-11--30/GA11-30_antwerp_datasheet_EN_2935082640.pdf) lists GA 11 variants with an 11 kW installed motor, pressure variants from 7.5 to 13 bar(e), and flow varying with pressure (for the listed GA 11 rows, 37.2 to 26.7 l/s). These are model-specific catalog points, not universal compressor operating limits. A future asset profile may use these values as a labelled example configuration after unit/range review; current generic ranges remain illustrative.
 
+## Hydraulic rig evidence for pump leakage and cooling degradation
+
+The official UCI [Condition Monitoring of Hydraulic Systems dataset](https://archive.ics.uci.edu/dataset/447) (DOI `10.24432/C5CW21`, CC BY 4.0; creators Nikolai Helwig, Eliseo Pignanelli, and Andreas Schütze) contains 2,205 repeated 60-second cycles from one experimental hydraulic test rig. It reports six pressure channels and motor power at 100 Hz, two flow channels at 10 Hz, and temperature, vibration, and derived cooling/efficiency channels at 1 Hz. Four component conditions are varied with graded labels, and a separate stability flag marks cycles that may not have reached steady state.
+
+Download the official ZIP outside the checkout and run:
+
+```bash
+uv run ot-lab calibration analyze-hydraulic \
+  --input /path/to/condition+monitoring+of+hydraulic+systems.zip \
+  --output calibration/zema-hydraulic-summary.json
+```
+
+The committed aggregate report records archive SHA-256 `24128aad2ee45eea7e6b63ebbd9992cdf25d0483a2cebefbfc13bc69079af1f2`, label counts, and cycle-mean quantiles. To reduce confounding, its per-component summaries hold other component labels at nominal values and require the stable flag to be zero. This leaves only 10 cycles per level for most isolated groups, so values are descriptive and not universal limits or population priors.
+
+In that isolated subset, internal leakage levels 0/1/2 have median `FS1` flow 6.712/6.525/6.432 l/min and median `EPS1` motor power 2533.08/2550.15/2575.25 W. The four recorded cooling-condition values 100/20/3 have median `TS1` temperature 36.28/45.56/54.76 °C and median derived `CE` cooling efficiency 47.59/28.00/20.60%. These observations support coupled, graded examples for flow/power and cooling/temperature. They do not establish causal parameters for this Lab's generic pump: the rig's `EPS1` is power rather than current, it does not measure RPM, its pressure sensors have distinct physical positions, and its cycle-wise labels do not timestamp within-cycle fault onset. `VS1` does not rise with the internal leakage label in this isolated sample, so the evidence does not justify a generic leakage-to-vibration gain. No raw UCI measurements are included in the repository or public datasets.
+
 ## Pump evidence
 
 The [Grundfos CR databooklet](https://api.grundfos.com/literature/Grundfosliterature-6511688.pdf) publishes model-specific head-flow-power-efficiency curves for CR pumps under stated test/standard conditions. It supports modelling pump flow, pressure/head, shaft power and efficiency as coupled quantities. Digitizing a curve requires recording the pump variant, speed, impeller, test conditions, source page and digitization error; this has not yet been done.
+
+The ZeMA hydraulic rig results above provide an additional independently sourced, fault-labelled example of internal leakage and cooling degradation. They do not fill the missing RPM and current measurements for `PUMP-01`; the generic process model remains illustrative until a directly compatible pump curve or telemetry source is analyzed.
 
 ## What remains uncalibrated
 
