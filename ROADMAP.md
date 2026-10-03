@@ -16,7 +16,7 @@ OT Irregularity Lab v0.2.0 delivers a randomized suite and one public 1,000-run 
 - [ ] Evaluate the protocol with multiple independent external model commands and compare event and timestamp metrics. Scores must not feed back into simulator design or event parameters.
 - [x] Sample hidden challenge asset profiles, regimes, event types/counts, durations, and parameters from the versioned training-suite distributions at runtime. Resolved seed/scenario/parameters remain outside model input.
 - [ ] Add explicit challenge-only distributions and anti-leakage checks across repeated cases; current challenge samples the public training suite distribution.
-- [ ] Review container isolation against the intended threat model, including image network attempts, filesystem visibility, resource exhaustion, output validation, and host/runtime boundaries. A 64 MiB output ceiling, bounded log retention, timeout, and cgroup limits are implemented; these are not a security certification or a filesystem quota. Local process execution is not a security sandbox.
+- [ ] Review container isolation against the intended threat model, including image network attempts, filesystem visibility, resource exhaustion, output validation, and host/runtime boundaries. Image pulls are disabled during evaluation, and timed-out containers are removed; a 64 MiB monitored output ceiling, bounded log retention, timeout, and cgroup limits are implemented. These are not a security certification or a hard filesystem quota. Local process execution is not a security sandbox.
 
 ## Optional plant and protocol adapters
 

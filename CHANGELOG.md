@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1 — 2026-10-03
+
+- Prevent the Docker daemon from pulling submission images during evaluation; submissions must use a locally available image.
+- Force-remove the evaluation container if the Docker CLI exits on timeout or output-size enforcement.
+- Added daemon-backed regression evidence showing a timed-out container does not remain running.
+
 ## 0.3.0 — 2026-10-03
 
 - Made configured anomaly severity scale continuous signal effects and telemetry-loss probability; added deterministic multi-tag loss selection and 40-seed empirical rate checks.
