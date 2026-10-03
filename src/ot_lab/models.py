@@ -38,6 +38,8 @@ class AssetSpec(BaseModel):
     asset_id: str
     asset_class: AssetType
     process_profile: Literal["generic", "metropt3_rail_apu"] = "generic"
+    process_profile_version: Literal["1.0.0"] = "1.0.0"
+    process_parameters: dict[str, float] = Field(default_factory=dict)
     regimes: list[Regime] = Field(
         default_factory=lambda: ["WARMUP", "LOW_LOAD", "NORMAL_LOAD", "HIGH_LOAD", "COOLDOWN"]
     )
@@ -51,6 +53,31 @@ class AssetSpec(BaseModel):
         asset_class = info.data.get("asset_class")
         if value == "metropt3_rail_apu" and asset_class != "compressor":
             raise ValueError("metropt3_rail_apu process_profile requires asset_class=compressor")
+        return value
+
+    @field_validator("process_parameters")
+    @classmethod
+    def validate_process_parameters(cls, value: dict[str, float], info: Any) -> dict[str, float]:
+        profile = info.data.get("process_profile", "generic")
+        allowed = {
+            "load_tau_s", "current_loaded_base_a", "current_loaded_span_a", "current_off_a",
+            "current_noise_a", "pressure_loaded_min_bar", "pressure_loaded_span_bar",
+            "pressure_off_bar", "pressure_noise_bar", "oil_temperature_rise_c",
+            "oil_thermal_tau_s", "discharge_temperature_rise_c", "discharge_noise_c",
+            "vibration_base_mm_s", "vibration_load_gain_mm_s", "vibration_noise_mm_s",
+        }
+        if profile != "metropt3_rail_apu" and value:
+            raise ValueError("process_parameters are supported only by configurable non-generic profiles")
+        unknown = set(value) - allowed
+        if unknown:
+            raise ValueError(f"unknown process parameters: {', '.join(sorted(unknown))}")
+        if any(not isinstance(parameter, (int, float)) or not float("-inf") < parameter < float("inf") for parameter in value.values()):
+            raise ValueError("process parameter values must be finite numbers")
+        for key, parameter in value.items():
+            if key.endswith("tau_s") and parameter <= 0:
+                raise ValueError(f"{key} must be positive")
+            if key.endswith(("noise_a", "noise_bar", "noise_c", "noise_mm_s")) and parameter < 0:
+                raise ValueError(f"{key} must be non-negative")
         return value
 
 

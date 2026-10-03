@@ -295,6 +295,26 @@ def test_metropt_rail_apu_profile_is_rejected_for_non_compressor_assets():
         AssetSpec(asset_id="P-1", asset_class="pump", process_profile="metropt3_rail_apu")
 
 
+def test_metropt_rail_apu_profile_parameters_are_explicit_and_change_outputs():
+    default = AssetSpec(asset_id="APU-1", asset_class="compressor", process_profile="metropt3_rail_apu")
+    adjusted = AssetSpec(
+        asset_id="APU-1", asset_class="compressor", process_profile="metropt3_rail_apu",
+        process_profile_version="1.0.0", process_parameters={"current_loaded_base_a": 5.2},
+    )
+    default_row = simulate_step(default, ProcessState(temperature=65), "NORMAL_LOAD", 10, 22, np.random.default_rng(13))
+    adjusted_row = simulate_step(adjusted, ProcessState(temperature=65), "NORMAL_LOAD", 10, 22, np.random.default_rng(13))
+    assert adjusted_row["motor_current_a"] - default_row["motor_current_a"] == pytest.approx(0.44)
+    assert adjusted.model_dump()["process_profile_version"] == "1.0.0"
+
+
+def test_metropt_rail_apu_profile_rejects_nonpositive_time_constants():
+    with pytest.raises(ValueError, match="must be positive"):
+        AssetSpec(
+            asset_id="APU-1", asset_class="compressor", process_profile="metropt3_rail_apu",
+            process_parameters={"oil_thermal_tau_s": 0},
+        )
+
+
 def test_sampling_jitter_changes_intervals_deterministically():
     scenario = Scenario.model_validate({
         "scenario_id": "jitter", "duration_s": 20, "sampling_interval_ms": 1000,

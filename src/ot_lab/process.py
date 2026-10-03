@@ -140,7 +140,7 @@ def simulate_step(
         }
     elif asset.asset_class == "compressor":
         if asset.process_profile == "metropt3_rail_apu":
-            return _simulate_metropt3_rail_apu(state, regime, dt, ambient_c, rng)
+            return _simulate_metropt3_rail_apu(asset, state, regime, dt, ambient_c, rng)
         load = state.load
         state.temperature += (ambient_c + 80 * load - state.temperature) * (1 - np.exp(-dt / 120))
         discharge = ambient_c + 20 + 130 * load
@@ -169,6 +169,7 @@ def simulate_step(
 
 
 def _simulate_metropt3_rail_apu(
+    asset: AssetSpec,
     state: ProcessState,
     regime: Regime,
     dt: float,
@@ -180,25 +181,44 @@ def _simulate_metropt3_rail_apu(
     Digital regimes stand in for the dataset's ambiguous COMP/DV state labels;
     they do not claim to reconstruct the original control logic or dynamics.
     """
+    parameters = {
+        "load_tau_s": 8.0,
+        "current_loaded_base_a": 4.76,
+        "current_loaded_span_a": 1.44,
+        "current_off_a": 0.04,
+        "current_noise_a": 0.35,
+        "pressure_loaded_min_bar": 7.79,
+        "pressure_loaded_span_bar": 2.264,
+        "pressure_off_bar": 8.98,
+        "pressure_noise_bar": 0.15,
+        "oil_temperature_rise_c": 43.9,
+        "oil_thermal_tau_s": 900.0,
+        "discharge_temperature_rise_c": 20.0,
+        "discharge_noise_c": 0.5,
+        "vibration_base_mm_s": 0.4,
+        "vibration_load_gain_mm_s": 0.8,
+        "vibration_noise_mm_s": 0.08,
+    }
+    parameters.update(asset.process_parameters)
     loaded = regime in {"LOW_LOAD", "NORMAL_LOAD", "HIGH_LOAD"}
     target_load = {"LOW_LOAD": 0.55, "NORMAL_LOAD": 0.72, "HIGH_LOAD": 0.82}.get(regime, 0.0)
-    alpha = 1 - np.exp(-max(dt, 0) / 8.0)
+    alpha = 1 - np.exp(-max(dt, 0) / parameters["load_tau_s"])
     state.load += (target_load - state.load) * alpha
     if loaded:
-        current = 4.76 + 1.44 * state.load + float(rng.normal(0, 0.35))
-        pressure_target = 7.79 + 2.264 * state.load
+        current = parameters["current_loaded_base_a"] + parameters["current_loaded_span_a"] * state.load + float(rng.normal(0, parameters["current_noise_a"]))
+        pressure_target = parameters["pressure_loaded_min_bar"] + parameters["pressure_loaded_span_bar"] * state.load
     else:
-        current = 0.04 + float(rng.normal(0, 0.025))
-        pressure_target = 8.98
+        current = parameters["current_off_a"] + float(rng.normal(0, parameters["current_noise_a"] * 0.0714286))
+        pressure_target = parameters["pressure_off_bar"]
     # The source supports observed oil-temperature envelopes, not a time constant.
     # This deliberately slow illustrative response is configurable in a future schema.
-    state.temperature += (ambient_c + 43.9 - state.temperature) * (1 - np.exp(-max(dt, 0) / 900.0))
+    state.temperature += (ambient_c + parameters["oil_temperature_rise_c"] - state.temperature) * (1 - np.exp(-max(dt, 0) / parameters["oil_thermal_tau_s"]))
     result = {
         "motor_current_a": _bounded(current, 0, 10),
         "oil_temperature_c": _bounded(state.temperature, 0, 110),
-        "discharge_temperature_c": _bounded(ambient_c + 20 + 80 * state.load + rng.normal(0, 0.5), 0, 160),
-        "pressure_bar": _bounded(pressure_target + rng.normal(0, 0.15), 0, 15),
-        "vibration_mm_s": _bounded(0.4 + 0.8 * state.load + rng.normal(0, 0.08), 0, 10),
+        "discharge_temperature_c": _bounded(ambient_c + parameters["discharge_temperature_rise_c"] + 80 * state.load + rng.normal(0, parameters["discharge_noise_c"]), 0, 160),
+        "pressure_bar": _bounded(pressure_target + rng.normal(0, parameters["pressure_noise_bar"]), 0, 15),
+        "vibration_mm_s": _bounded(parameters["vibration_base_mm_s"] + parameters["vibration_load_gain_mm_s"] * state.load + rng.normal(0, parameters["vibration_noise_mm_s"]), 0, 10),
         "load_pct": _bounded(100 * state.load + rng.normal(0, 1), 0, 100),
     }
     state.previous_signals = result.copy()
