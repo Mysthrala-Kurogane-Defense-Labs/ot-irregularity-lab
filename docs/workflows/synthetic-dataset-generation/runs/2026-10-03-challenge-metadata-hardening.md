@@ -16,8 +16,16 @@ Inspection found that `generate_challenge` removed the seed and scenario hash fr
 - `uv run --python 3.12 ruff check src tests`: passed.
 - `uv lock --check`: passed.
 - `git diff --check`: passed.
-- Changes are local and not yet committed or CI-verified.
+- The changes were published in commit `459e5e27f325190981dcfeea3d19a9d40a42c392`; GitHub Actions run [37146984474](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/actions/runs/37146984474) passed both core and OPC UA jobs.
 
 ## Limits
 
-The challenge still samples the public training suite distribution. This check covers artifact-level metadata disclosure across seeded repeated cases; it is not an external red-team review or a comprehensive challenge threat model. Docker resource limits and writable output remain subject to the boundaries recorded in `ROADMAP.md`.
+The first hardening change checks artifact-level metadata disclosure across seeded repeated cases; it is not an external red-team review or a comprehensive challenge threat model. Docker resource limits and writable output remain subject to the boundaries recorded in `ROADMAP.md`.
+
+## Independent challenge distribution follow-up
+
+- Added `suites/challenge-v0.1.yaml`, with public weighted distributions that emphasize low-intensity degradation, multivariate novelty, data loss, communication loss, operating transitions, varied assets and sampling cadence.
+- Added optional `--challenge-suite`; when selected, the evaluator samples from its `scenario` and `generation` blocks.
+- Added a generator test verifying the separate profile controls generated duration/cadence and its scenario identifier is not exposed in model-visible metadata or ground truth.
+- Removed `observed_start`/`observed_end` fields from challenge ground truth output as well; these evaluator-derived timestamps are unnecessary to the post-inference scoring path, which falls back to event start/end.
+- Focused challenge tests and Ruff passed locally. These distribution changes have not yet been pushed or CI-verified.

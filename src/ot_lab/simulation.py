@@ -777,13 +777,14 @@ def _batch_to_directory(
     (output / "suite.yaml").write_bytes(suite_path.read_bytes())
 
 
-def generate_challenge(suite_path: Path, output: Path, master_seed: int | None = None) -> tuple[Path, Path]:
-    """Generate an ephemeral challenge case; master seed is OS-random unless explicitly supplied for tests."""
+def generate_challenge(suite_path: Path, output: Path, master_seed: int | None = None, challenge_suite_path: Path | None = None) -> tuple[Path, Path]:
+    """Generate an ephemeral case, optionally using a separate challenge distribution."""
     suite = yaml.safe_load(suite_path.read_text(encoding="utf-8"))
+    challenge_suite = yaml.safe_load(challenge_suite_path.read_text(encoding="utf-8")) if challenge_suite_path else suite
     seed = int(np.random.SeedSequence().generate_state(1, dtype=np.uint64)[0]) if master_seed is None else master_seed
     case_dir = output / "case"
-    base = json.loads(json.dumps(suite["scenario"]))
-    generation = suite.get("generation", {})
+    base = json.loads(json.dumps(challenge_suite["scenario"]))
+    generation = challenge_suite.get("generation", {})
     # A fixed opaque ID prevents the model input from revealing the hidden seed.
     run_id = "challenge-hidden"
     if generation:
@@ -810,6 +811,8 @@ def generate_challenge(suite_path: Path, output: Path, master_seed: int | None =
     truth = json.loads(truth_path.read_text(encoding="utf-8"))
     for event in truth["events"]:
         event.pop("parameters", None)
+        event.pop("observed_start", None)
+        event.pop("observed_end", None)
     truth_path.write_text(json.dumps(truth, indent=2) + "\n", encoding="utf-8")
     # The local evaluator receives truth only after the model has exited; seed is held in memory, not written.
     return case_dir, case_dir / "ground_truth.json"

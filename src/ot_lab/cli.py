@@ -58,6 +58,7 @@ def main() -> None:
     docker_cmd.add_argument("--max-output-bytes", type=int, default=DEFAULT_MAX_OUTPUT_BYTES)
     challenge_cmd = commands.add_parser("challenge", help="generate and score a fresh hidden-seed challenge case")
     challenge_cmd.add_argument("--suite", type=Path, required=True)
+    challenge_cmd.add_argument("--challenge-suite", type=Path, help="optional independently versioned hidden-case distribution")
     challenge_cmd.add_argument("--image", required=True)
     challenge_cmd.add_argument("--output", type=Path, required=True)
     challenge_cmd.add_argument("--timeout", type=int, default=300)
@@ -97,7 +98,7 @@ def main() -> None:
         import tempfile
         args.output.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="ot-lab-challenge-") as temp:
-            case_dir, truth_path = generate_challenge(args.suite, Path(temp))
+            case_dir, truth_path = generate_challenge(args.suite, Path(temp), challenge_suite_path=args.challenge_suite)
             predictions = Path(temp) / "predictions.jsonl"
             run_docker_submission(args.image, case_dir, predictions, args.timeout, args.max_output_bytes)
             result_dir = Path(temp) / "result"

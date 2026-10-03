@@ -26,6 +26,8 @@ The 1,000-run [OT Irregularity Training Dataset v0.3.0](https://github.com/Mysth
 
 The model input is `telemetry.parquet`; never pass `ground_truth.json` or `run_metadata.json` to a model submission. The evaluator reads predictions and ground truth in a separate process. Do not mount ground truth into inference containers.
 
+Run a fresh Docker challenge with a separate hidden-case distribution: `uv run ot-lab challenge --suite suites/training-v0.2.yaml --challenge-suite suites/challenge-v0.1.yaml --image MODEL_IMAGE --output results/model-a`. Each invocation uses an OS-generated seed; suite definitions are public and scenario parameters are sampled afresh.
+
 Optional protocol replay adapters are documented in [PROTOCOLS.md](PROTOCOLS.md). The core generator does not require protocol emulators.
 
 Current public-source calibration evidence and its limits are recorded in [CALIBRATION.md](CALIBRATION.md); process dynamics remain illustrative until independently calibrated.

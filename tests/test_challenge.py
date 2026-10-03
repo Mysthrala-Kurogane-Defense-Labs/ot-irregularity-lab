@@ -108,6 +108,7 @@ def test_repeated_challenges_vary_without_persisting_resolved_case_details(tmp_p
         assert "scenario_id" not in metadata and "scenario_version" not in metadata
         assert not (case_dir / "scenario.yaml").exists()
         assert all("parameters" not in event for event in truth["events"])
+        assert all("observed_start" not in event and "observed_end" not in event for event in truth["events"])
         assert "scenario_id" not in json.dumps(metadata) + json.dumps(truth)
         assert "seed" not in json.dumps(metadata) + json.dumps(truth)
         assert telemetry.get_column("run_id").unique().to_list() == ["challenge-hidden"]
@@ -115,3 +116,21 @@ def test_repeated_challenges_vary_without_persisting_resolved_case_details(tmp_p
 
     # Runtime samples should explore more than one public-profile outcome across fresh seeds.
     assert len(set(public_cases)) > 1
+
+
+def test_challenge_can_use_an_independent_hidden_distribution(tmp_path):
+    public_suite = Path("suites/training-v0.2.yaml")
+    hidden_suite = Path("suites/challenge-v0.1.yaml")
+    case_dir, truth_path = generate_challenge(
+        public_suite, tmp_path / "independent-challenge", master_seed=71, challenge_suite_path=hidden_suite
+    )
+    metadata = json.loads((case_dir / "run_metadata.json").read_text(encoding="utf-8"))
+    truth = json.loads(truth_path.read_text(encoding="utf-8"))
+    telemetry = pl.read_parquet(case_dir / "telemetry.parquet")
+    assert metadata["duration_s"] in range(300, 901)
+    assert metadata["sampling_interval_ms"] in {500, 1000, 2000}
+    assert metadata["run_id"] == "challenge-hidden"
+    assert truth["events"]
+    assert all("observed_start" not in event and "observed_end" not in event for event in truth["events"])
+    assert "hidden-ot-challenge" not in json.dumps(metadata) + json.dumps(truth)
+    assert telemetry.get_column("asset_id").unique().to_list()
