@@ -1,0 +1,20 @@
+suite_id: communications-v0.1
+partitions:
+  train: 0.7
+  validation: 0.15
+  test: 0.15
+scenario:
+  scenario_id: communication-loss
+  run_id: base
+  duration_s: 300
+  sampling_interval_ms: 1000
+  assets:
+    - asset_id: PUMP-01
+      asset_class: pump
+  anomalies:
+    - type: missing_telemetry
+      asset: PUMP-01
+      start: {min: 60, max: 120}
+      duration: {min: 30, max: 90}
+      parameters:
+        loss_pct: {min: 5, max: 50}

@@ -120,6 +120,14 @@ def test_missing_telemetry_uses_configured_loss_and_records_event_interval():
     assert truth["events"][0]["observed_end"]
 
 
+@pytest.mark.parametrize("asset_class", ["cnc", "pump", "compressor", "conveyor"])
+def test_process_simulation_is_reproducible_for_every_asset(asset_class):
+    scenario = fixture_scenario(asset_class)
+    left = simulate(scenario, 123)[0]
+    right = simulate(scenario, 123)[0]
+    assert left.equals(right)
+
+
 def test_quality_degradation_is_exposed_in_canonical_quality():
     scenario = fixture_scenario(anomaly={
         "type": "quality_degradation", "asset": "ASSET-01", "start": 5,

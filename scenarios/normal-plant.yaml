@@ -1,0 +1,17 @@
+scenario_id: normal-plant
+scenario_version: 1.0.0
+run_id: plant-normal-0001
+description: Four synthetic assets with coupled normal process behavior.
+duration_s: 1800
+sampling_interval_ms: 1000
+sampling_jitter_ms: 15
+ambient_temperature_c: 21
+assets:
+  - asset_id: CNC-01
+    asset_class: cnc
+  - asset_id: PUMP-01
+    asset_class: pump
+  - asset_id: COMPRESSOR-01
+    asset_class: compressor
+  - asset_id: CONVEYOR-01
+    asset_class: conveyor
