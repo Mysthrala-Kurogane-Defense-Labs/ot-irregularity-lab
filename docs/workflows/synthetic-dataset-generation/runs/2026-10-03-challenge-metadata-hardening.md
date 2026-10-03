@@ -28,5 +28,4 @@ The first hardening change checks artifact-level metadata disclosure across seed
 - Added optional `--challenge-suite`; when selected, the evaluator samples from its `scenario` and `generation` blocks.
 - Added a generator test verifying the separate profile controls generated duration/cadence and its scenario identifier is not exposed in model-visible metadata or ground truth.
 - Removed `observed_start`/`observed_end` fields from challenge ground truth output as well; these evaluator-derived timestamps are unnecessary to the post-inference scoring path, which falls back to event start/end.
-- Focused challenge tests and Ruff passed locally. These distribution changes have not yet been pushed or CI-verified.
 - The independent distribution and metadata changes were published in commit `98944607c692cd9f0fa02ecdcead30a192fcf761`; Actions run [37147259217](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/actions/runs/37147259217) passed core and OPC UA.

@@ -22,6 +22,8 @@ For long runs, add `--resume` to keep per-run checkpoints after interruption. Re
 
 The randomized training suite mixes normal process variation with seeded events across all 15 supported event families. Its realized class, event, asset, and regime distributions are recorded in the dataset manifest. See [the synthetic dataset design and source analysis](SYNTHETIC_DATASET_DESIGN.md) for the sampling choices and limits.
 
+For event-free runs with randomized assets, shifts, startup/shutdown, ambient changes, cadence, and jitter, generate `suites/normal-operation-v0.1.yaml` with `uv run ot-lab dataset create --suite suites/normal-operation-v0.1.yaml --runs 1000 --seed 42 --output datasets/normal-v0.1`. This suite is useful for studying false alarms during ordinary transitions; it does not establish field-normal limits.
+
 The 1,000-run [OT Irregularity Training Dataset v0.3.0](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/releases/tag/dataset-v0.3.0) is published under CC BY 4.0; [v0.2.0](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/releases/tag/dataset-v0.2.0) remains available as a historical artifact. The merged `train.parquet`, `validation.parquet`, and `test.parquet` files contain telemetry only; per-run ground truth is stored separately. A more complete roadmap, including current limitations, lives in [ROADMAP.md](ROADMAP.md).
 
 The model input is `telemetry.parquet`; never pass `ground_truth.json` or `run_metadata.json` to a model submission. The evaluator reads predictions and ground truth in a separate process. Do not mount ground truth into inference containers.
