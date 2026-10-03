@@ -34,7 +34,30 @@ EVENT_SIGNALS = {
 def read_scenario(path: Path) -> Scenario:
     with path.open("r", encoding="utf-8") as stream:
         data = yaml.safe_load(stream)
+    data = resolve_profiles(data)
     return Scenario.model_validate(data)
+
+
+def resolve_profiles(data: dict[str, Any]) -> dict[str, Any]:
+    """Resolve optional easy/medium/hard labels to explicit numeric parameters."""
+    resolved = json.loads(json.dumps(data))
+    profiles = {"easy": 0.50, "medium": 0.25, "hard": 0.10, "very_hard": 0.05}
+    for anomaly in resolved.get("anomalies", []):
+        profile_name = anomaly.pop("difficulty", None)
+        if profile_name is None:
+            continue
+        if profile_name not in profiles:
+            raise ValueError(f"unknown difficulty profile {profile_name!r}")
+        gain_scale = profiles[profile_name]
+        params = anomaly.setdefault("parameters", {})
+        explicit_keys = ("vibration_gain", "temperature_gain", "current_gain", "flow_loss", "pressure_loss", "bias", "magnitude", "rate_per_minute")
+        for key in explicit_keys:
+            if key in params and isinstance(params[key], (int, float)):
+                params[key] = float(params[key]) * gain_scale
+        anomaly["resolved_difficulty"] = {"profile": profile_name, "gain_scale": gain_scale}
+        if "progression" in params and params["progression"] == "linear":
+            params["progression_rate_scale"] = 1.0 / gain_scale
+    return resolved
 
 
 def _event_active(event: Any, seconds: float) -> bool:
@@ -56,28 +79,32 @@ def _affect(
     if kind == "bearing_degradation":
         vib = pick("vibration_mm_s", "spindle_vibration_mm_s")
         temp = pick("motor_temperature_c", "spindle_temperature_c")
-        gain = float(p.get("vibration_gain", 0.20)) * fraction
-        tgain = float(p.get("temperature_gain", 0.08)) * fraction
+        progression = str(p.get("progression", "linear"))
+        progress = fraction if progression == "linear" else min(1.0, fraction**2) if progression == "slow_start" else fraction**0.5 if progression == "fast_start" else None
+        if progress is None:
+            raise ValueError(f"unsupported bearing progression {progression!r}")
+        gain = float(p.get("vibration_gain", 0.20)) * progress
+        tgain = float(p.get("temperature_gain", 0.08)) * progress
         for name in vib:
             signals[name] *= 1 + gain
         for name in temp:
             signals[name] += 15 * tgain
         affected.update(vib + temp)
     elif kind == "cavitation":
-        for name in pick("vibration_mm_s"):
+        for name in pick("vibration_mm_s", "spindle_vibration_mm_s"):
             signals[name] += float(p.get("vibration_gain", 0.8)) * fraction
             affected.add(name)
         for name in pick("flow_l_min"):
             signals[name] *= 1 - float(p.get("flow_loss", 0.12)) * fraction
             affected.add(name)
-        for name in pick("pressure_bar"):
+        for name in pick("pressure_bar", "coolant_pressure_bar"):
             signals[name] *= 1 - float(p.get("pressure_loss", 0.10)) * fraction
             affected.add(name)
         for name in pick("motor_current_a"):
             signals[name] *= 1 + float(p.get("current_gain", 0.05)) * fraction
             affected.add(name)
     elif kind == "cooling_degradation":
-        for name in pick("temperature_c", "oil_temperature_c", "discharge_temperature_c"):
+        for name in pick("temperature_c", "oil_temperature_c", "discharge_temperature_c", "spindle_temperature_c"):
             signals[name] += float(p.get("temperature_gain", 0.08)) * 35 * fraction
             affected.add(name)
     elif kind == "mechanical_overload":
@@ -130,7 +157,10 @@ def _affect(
         for name in names:
             signals.pop(name, None)
             affected.add(name)
-    elif kind in ("missing_telemetry", "asset_communication_loss"):
+    elif kind == "asset_communication_loss":
+        affected.update(signals)
+        signals.clear()
+    elif kind == "missing_telemetry":
         loss_pct = float(p.get("loss_pct", 100 if kind == "asset_communication_loss" else 25))
         if not 0 <= loss_pct <= 100:
             raise ValueError("loss_pct must be within 0..100")
@@ -148,22 +178,36 @@ def _affect(
         quality = "BAD"
         affected.update(signals)
     elif kind == "regime_mismatch":
-        for name in pick("load_pct"):
+        targets = pick("load_pct", "spindle_power_kw", "motor_current_a", "feed_rate")
+        for name in targets:
             signals[name] *= float(p.get("load_multiplier", 0.7))
             affected.add(name)
     elif kind == "multivariate_novelty":
-        # Individually in-range but unusual: one or more high-normal process channels paired with low power.
-        for name in pick("temperature_c", "oil_temperature_c", "spindle_temperature_c"):
-            _, _, lo, hi = signal_metadata(asset_class)[name]
-            signals[name] = max(signals[name], lo + 0.78 * (hi - lo))
-            affected.add(name)
-        for name in pick("vibration_mm_s", "spindle_vibration_mm_s"):
-            _, _, lo, hi = signal_metadata(asset_class)[name]
-            signals[name] = max(signals[name], lo + 0.75 * (hi - lo))
-            affected.add(name)
-        for name in pick("spindle_power_kw", "motor_current_a"):
-            signals[name] = min(signals[name], signal_metadata(asset_class)[name][2] + 0.25 * (signal_metadata(asset_class)[name][3] - signal_metadata(asset_class)[name][2]))
-            affected.add(name)
+        # Each selected channel remains inside engineering bounds; the joint pattern is unusual.
+        targets = [(str(p.get("signal_a", "")), float(p.get("signal_a_pct", 0.8))), (str(p.get("signal_b", "")), float(p.get("signal_b_pct", 0.8)))]
+        configured = [(name, pct) for name, pct in targets if name]
+        if configured:
+            for name, pct in configured:
+                if name not in signals:
+                    raise ValueError(f"multivariate_novelty references unknown signal {name!r}")
+                _, _, lo, hi = signal_metadata(asset_class)[name]
+                if not 0 <= pct <= 1:
+                    raise ValueError("multivariate_novelty signal percentages must be within 0..1")
+                signals[name] = lo + pct * (hi - lo)
+                affected.add(name)
+        else:
+            # High-normal thermal/vibration values paired with low-normal power/current.
+            for name in pick("temperature_c", "oil_temperature_c", "spindle_temperature_c"):
+                _, _, lo, hi = signal_metadata(asset_class)[name]
+                signals[name] = max(signals[name], lo + 0.78 * (hi - lo))
+                affected.add(name)
+            for name in pick("vibration_mm_s", "spindle_vibration_mm_s"):
+                _, _, lo, hi = signal_metadata(asset_class)[name]
+                signals[name] = max(signals[name], lo + 0.75 * (hi - lo))
+                affected.add(name)
+            for name in pick("spindle_power_kw", "motor_current_a"):
+                signals[name] = min(signals[name], signal_metadata(asset_class)[name][2] + 0.25 * (signal_metadata(asset_class)[name][3] - signal_metadata(asset_class)[name][2]))
+                affected.add(name)
     elif kind == "maintenance_activity":
         for name in pick("motor_current_a", "spindle_power_kw", "load_pct"):
             signals[name] *= float(p.get("load_multiplier", 0.1))
@@ -199,8 +243,9 @@ def simulate(scenario: Scenario, seed: int) -> tuple[pl.DataFrame, dict[str, Any
         timestamp = origin + timedelta(milliseconds=max(0, timestamp_ms))
         for asset in scenario.assets:
             state = states[asset.asset_id]
-            regime = regime_at(seconds, scenario.duration_s, asset.regimes)
-            signals = simulate_step(asset, state, regime, step_ms / 1000, scenario.ambient_temperature_c, rng)
+            regime = regime_at(seconds, scenario.duration_s, asset.regimes, scenario.shift_pattern)
+            ambient = scenario.ambient_temperature_c + scenario.ambient_temperature_drift_c * seconds / max(scenario.duration_s, 1)
+            signals = simulate_step(asset, state, regime, step_ms / 1000, ambient, rng)
             quality_by_signal = {name: "GOOD" for name in signals}
             active_events: list[Any] = []
             for anomaly in scenario.anomalies:
@@ -360,6 +405,7 @@ def generate_challenge(suite_path: Path, output: Path, master_seed: int | None =
             value = anomaly.get(field)
             if isinstance(value, dict) and set(value) == {"min", "max"}:
                 anomaly[field] = float(rng.uniform(float(value["min"]), float(value["max"])))
+    scenario_data = resolve_profiles(scenario_data)
     scenario = Scenario.model_validate(scenario_data)
     write_run(scenario, seed, case_dir, persist_scenario=False)
     # Hidden seed and resolved scenario are not persisted in a challenge case.

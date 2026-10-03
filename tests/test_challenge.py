@@ -24,3 +24,15 @@ def test_challenge_uses_hidden_seed_and_does_not_persist_replay_seed(tmp_path):
     assert not (case / "scenario.yaml").exists()
     assert "parameters" not in truth["events"][0]
     assert "seed" not in json.dumps(truth)
+
+
+def test_difficulty_profiles_resolve_to_numeric_parameters():
+    from ot_lab.simulation import resolve_profiles
+
+    resolved = resolve_profiles({"anomalies": [{
+        "type": "bearing_degradation", "difficulty": "hard",
+        "parameters": {"vibration_gain": 1.0, "temperature_gain": 0.4},
+    }]})["anomalies"][0]
+    assert resolved["parameters"]["vibration_gain"] == 0.1
+    assert resolved["parameters"]["temperature_gain"] == 0.04000000000000001
+    assert resolved["resolved_difficulty"] == {"profile": "hard", "gain_scale": 0.1}

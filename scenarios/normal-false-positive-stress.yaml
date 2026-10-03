@@ -6,6 +6,8 @@ duration_s: 3600
 sampling_interval_ms: 1000
 sampling_jitter_ms: 20
 ambient_temperature_c: 18
+ambient_temperature_drift_c: 8
+shift_pattern: [LOW_LOAD, NORMAL_LOAD, HIGH_LOAD, NORMAL_LOAD, COOLDOWN]
 assets:
   - asset_id: CNC-01
     asset_class: cnc

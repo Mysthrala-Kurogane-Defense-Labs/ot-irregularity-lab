@@ -68,6 +68,8 @@ def main() -> None:
     elif args.command == "batch":
         if args.runs <= 0:
             parser.error("--runs must be positive")
+        if args.suite.stem.lower() == "challenge":
+            parser.error("challenge data must use the ephemeral `challenge` command, not a persistent batch suite")
         batch(args.suite, args.runs, args.output, args.seed)
         print(args.output / "dataset_manifest.json")
     elif args.command == "benchmark":

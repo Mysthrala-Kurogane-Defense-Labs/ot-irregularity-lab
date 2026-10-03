@@ -60,11 +60,13 @@ class ProcessState:
     previous_signals: dict[str, float] = field(default_factory=dict)
 
 
-def regime_at(t: float, duration: float, regimes: list[Regime]) -> Regime:
+def regime_at(t: float, duration: float, regimes: list[Regime], shift_pattern: list[Regime] | None = None) -> Regime:
     """Select repeatable operating phases, including warmup and cooldown."""
     available = [r for r in regimes if r != "OFF" and r != "MAINTENANCE"]
     if not available:
         return "IDLE"
+    if shift_pattern:
+        return shift_pattern[min(int(t // 3600) % len(shift_pattern), len(shift_pattern) - 1)]
     fraction = t / max(duration, 1)
     if fraction < 0.08:
         return "WARMUP" if "WARMUP" in available else available[0]

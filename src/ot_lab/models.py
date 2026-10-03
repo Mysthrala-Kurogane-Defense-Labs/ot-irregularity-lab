@@ -29,6 +29,8 @@ class Anomaly(BaseModel):
     duration: float = Field(gt=0, description="Duration in seconds")
     parameters: dict[str, float | str | bool] = Field(default_factory=dict)
     severity: float = Field(default=0.4, ge=0, le=1)
+    difficulty: Literal["easy", "medium", "hard", "very_hard"] | None = None
+    resolved_difficulty: dict[str, float | str] | None = None
 
 
 class AssetSpec(BaseModel):
@@ -53,6 +55,8 @@ class Scenario(BaseModel):
     sampling_interval_ms: int = Field(default=1000, gt=0)
     sampling_jitter_ms: int = Field(default=0, ge=0)
     ambient_temperature_c: float = 22.0
+    ambient_temperature_drift_c: float = Field(default=0.0, ge=-20, le=20)
+    shift_pattern: list[Regime] = Field(default_factory=list)
     assets: list[AssetSpec]
     anomalies: list[Anomaly] = Field(default_factory=list)
     expose_operating_regime: bool = False

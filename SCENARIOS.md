@@ -4,7 +4,7 @@ Scenario YAML is versioned with `scenario_version`; times are offsets from run s
 
 Supported initial scenario names: `sensor_drift`, `sudden_spike`, `bearing_degradation`, `cavitation`, `cooling_degradation`, `mechanical_overload`, `sensor_stuck`, `sensor_bias`, `missing_telemetry`, `single_signal_loss`, `asset_communication_loss`, `quality_degradation`, `regime_mismatch`, `multivariate_novelty`, and `maintenance_activity`.
 
-There are no magical difficulty labels in the simulator. Suite authors may name a profile easy/medium/hard, but each resolved run must record numeric parameters. Example: `vibration_gain: 0.20` means a 20% increase; 0.10 is milder. A future suite resolver can publish ranges while drawing concrete values from its seed.
+Difficulty labels resolve to explicit numeric gain scales: easy 0.50, medium 0.25, hard 0.10, very_hard 0.05. The resolved factor is written into the scenario and the numeric parameters are scaled before simulation. This is a starting convention, not a universal perceptual calibration across unrelated anomaly types; benchmark authors should publish type-specific parameter ranges with each suite.
 
 ```yaml
 scenario_id: cnc-bearing-medium

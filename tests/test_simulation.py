@@ -5,7 +5,7 @@ import pytest
 
 from ot_lab.evaluation import evaluate
 from ot_lab.models import AssetSpec, Scenario
-from ot_lab.process import ProcessState, simulate_step
+from ot_lab.process import ProcessState, regime_at, simulate_step
 from ot_lab.simulation import simulate, write_run
 from ot_lab.submission import run_submission
 
@@ -108,6 +108,13 @@ def test_pump_load_couples_current_and_flow():
     assert high_row["flow_l_min"] > low_row["flow_l_min"]
 
 
+def test_shift_pattern_changes_regime_deterministically():
+    regimes = ["LOW_LOAD", "NORMAL_LOAD", "HIGH_LOAD"]
+    assert regime_at(0, 10800, regimes, regimes) == "LOW_LOAD"
+    assert regime_at(3600, 10800, regimes, regimes) == "NORMAL_LOAD"
+    assert regime_at(7200, 10800, regimes, regimes) == "HIGH_LOAD"
+
+
 def test_missing_telemetry_uses_configured_loss_and_records_event_interval():
     scenario = fixture_scenario(anomaly={
         "type": "missing_telemetry", "asset": "ASSET-01", "start": 5,
@@ -158,6 +165,37 @@ def test_scenario_rejects_anomaly_past_run_end():
             "type": "sensor_bias", "asset": "ASSET-01", "start": 20,
             "duration": 20,
         })
+
+
+@pytest.mark.parametrize("kind", [
+    "sensor_drift", "sudden_spike", "bearing_degradation", "cavitation",
+    "cooling_degradation", "mechanical_overload", "sensor_stuck", "sensor_bias",
+    "missing_telemetry", "single_signal_loss", "asset_communication_loss",
+    "quality_degradation", "regime_mismatch", "multivariate_novelty", "maintenance_activity",
+])
+def test_all_anomaly_types_emit_independent_ground_truth(kind):
+    params = {"loss_pct": 100} if kind == "missing_telemetry" else {}
+    anomaly = {"type": kind, "asset": "ASSET-01", "start": 5, "duration": 10, "parameters": params}
+    telemetry, truth, _ = simulate(fixture_scenario(anomaly=anomaly), 19)
+    assert truth["events"][0]["type"] == kind
+    assert truth["events"][0]["affected_signals"]
+    assert telemetry.height > 0
+
+
+
+
+@pytest.mark.parametrize("asset_class,kind", [
+    ("pump", "cavitation"), ("cnc", "cooling_degradation"),
+    ("compressor", "mechanical_overload"), ("conveyor", "mechanical_overload"),
+    ("pump", "asset_communication_loss"),
+])
+def test_process_anomalies_fit_asset_signal_inventory(asset_class, kind):
+    telemetry, truth, _ = simulate(fixture_scenario(asset_class, {
+        "type": kind, "asset": "ASSET-01", "start": 5, "duration": 10,
+    }), 29)
+    assert truth["events"][0]["affected_signals"]
+    if kind == "asset_communication_loss":
+        assert telemetry.filter(pl.col("timestamp") >= pl.datetime(2025, 1, 1, 0, 0, 6, time_zone="UTC")).height < telemetry.height
 
 
 def test_run_submission_exposes_only_temporary_input(tmp_path):
