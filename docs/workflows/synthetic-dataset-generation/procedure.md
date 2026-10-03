@@ -7,8 +7,8 @@ Generate a reproducible, model-agnostic synthetic dataset from a versioned suite
 ## Procedure
 
 1. Confirm a clean checkout on the intended simulator version; inspect `suites/training-v0.2.yaml` and its declared sampling weights/data license.
-2. Select a fresh, empty output path. Do not overwrite a non-empty directory; the CLI fails closed to prevent stale runs from entering a new manifest.
-3. Run `uv run ot-lab dataset create --suite <suite.yaml> --runs <N> --seed <seed> --output <dataset-path>`.
+2. Select a fresh output path. Standard generation requires it to be empty and publishes atomically. For long runs, use `--resume`; it stores per-run checkpoints in the output directory. Resume only with the same suite contents, run count, seed, simulator version, and schema version.
+3. Run `uv run ot-lab dataset create --suite <suite.yaml> --runs <N> --seed <seed> --output <dataset-path> [--resume]`.
 4. Verify the manifest run/observation counts, independent seeds, per-partition class and event distribution, and every partition Parquet row count/hash.
 5. Verify event records resolve to affected signals, the actual regime intervals cover each run, and no same-asset events overlap in randomly composed runs.
 6. Replay at least one normal run and one event-bearing run from different partitions; compare logical Parquet rows and ground-truth JSON.

@@ -37,6 +37,7 @@ def main() -> None:
     create_cmd.add_argument("--runs", type=int, required=True)
     create_cmd.add_argument("--seed", type=int, default=42)
     create_cmd.add_argument("--output", type=Path, required=True)
+    create_cmd.add_argument("--resume", action="store_true", help="keep per-run checkpoints and resume after interruption")
     benchmark_cmd = commands.add_parser("benchmark", help="score model predictions for a generated run")
     benchmark_cmd.add_argument("--run", type=Path, required=True, help="run directory containing ground_truth.json")
     benchmark_cmd.add_argument("--predictions", type=Path, required=True, help="JSONL model output")
@@ -75,7 +76,7 @@ def main() -> None:
     elif args.command in {"batch", "dataset"}:
         if args.runs <= 0:
             parser.error("--runs must be positive")
-        batch(args.suite, args.runs, args.output, args.seed)
+        batch(args.suite, args.runs, args.output, args.seed, resume=getattr(args, "resume", False))
         print(args.output / "dataset_manifest.json")
     elif args.command == "benchmark":
         result = evaluate(args.run / "ground_truth.json", args.predictions, args.output, args.threshold, args.overlap, args.run / "telemetry.parquet", args.run / "run_metadata.json")
@@ -102,7 +103,7 @@ def main() -> None:
         for prediction in args.predictions:
             model_output = args.output / prediction.stem
             metrics = evaluate(args.run / "ground_truth.json", prediction, model_output, args.threshold, args.overlap, args.run / "telemetry.parquet", args.run / "run_metadata.json")
-            rows.append({"model": prediction.stem, "precision": metrics["precision"], "recall": metrics["recall"], "f1": metrics["f1"], "pr_auc": metrics["pr_auc"], "false_positives_per_asset_hour": metrics["false_positives_per_asset_hour"], "event_detection_rate": metrics["event_detection_rate"], "percentage_of_event_detected": metrics["percentage_of_event_detected"]})
+            rows.append({"model": prediction.stem, "precision": metrics["precision"], "recall": metrics["recall"], "f1": metrics["f1"], "pr_auc": metrics["pr_auc"], "window_precision": metrics["window_precision"], "window_recall": metrics["window_recall"], "false_positives_per_asset_hour": metrics["false_positives_per_asset_hour"], "event_detection_rate": metrics["event_detection_rate"], "percentage_of_event_detected": metrics["percentage_of_event_detected"]})
         args.output.mkdir(parents=True, exist_ok=True)
         (args.output / "comparison.json").write_text(json.dumps(rows, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(rows, indent=2))

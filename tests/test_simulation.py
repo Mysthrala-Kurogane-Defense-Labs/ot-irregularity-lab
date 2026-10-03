@@ -1,5 +1,5 @@
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from pathlib import Path
 
@@ -91,10 +91,47 @@ def test_event_benchmark_reports_detection_and_artifacts(tmp_path):
     assert result["mean_event_coverage"] == 1
     assert result["f1"] == 1
     assert result["event_type_metrics"]["bearing_degradation"]["detection_rate"] == 1
-    assert result["true_positive_windows"] == 1
+    assert result["event_overlapping_alert_windows"] == 1
+    assert result["false_positive_windows"] == 0
+    assert result["window_recall"] == 1
     assert result["window_pr_auc"] == 1
     assert (tmp_path / "report" / "metrics.json").exists()
     assert (tmp_path / "report" / "report.html").exists()
+
+
+@pytest.mark.parametrize(
+    ("prediction_windows", "expected_recall", "expected_coverage", "expected_false_positives"),
+    [
+        ([(10, 15)], 1.0, 0.5, 0),
+        ([(0, 4), (10, 15), (10, 15)], 1.0, 0.5, 1),
+        ([(0, 4), (4, 5)], 0.0, 0.0, 2),
+        ([], 0.0, 0.0, 0),
+    ],
+)
+def test_event_metric_reference_cases(tmp_path, prediction_windows, expected_recall, expected_coverage, expected_false_positives):
+    scenario = fixture_scenario(anomaly={
+        "type": "sensor_bias", "asset": "ASSET-01", "start": 10,
+        "duration": 10, "parameters": {"signal": "spindle_power_kw", "bias": 1.0},
+    })
+    run_dir = tmp_path / "run"
+    write_run(scenario, 77, run_dir)
+    predictions = tmp_path / "reference.jsonl"
+    predictions.write_text("".join(json.dumps({
+        "asset_id": "ASSET-01",
+        "window_start": (EPOCH + timedelta(seconds=start)).isoformat(),
+        "window_end": (EPOCH + timedelta(seconds=end)).isoformat(),
+        "irregularity_score": 0.9,
+    }) + "\n" for start, end in prediction_windows), encoding="utf-8")
+    if not prediction_windows:
+        predictions.write_text(json.dumps({
+            "asset_id": "ASSET-01", "window_start": EPOCH.isoformat(),
+            "window_end": (EPOCH + timedelta(seconds=1)).isoformat(),
+            "irregularity_score": 0.0,
+        }) + "\n", encoding="utf-8")
+    result = evaluate(run_dir / "ground_truth.json", predictions, tmp_path / "report", telemetry_path=run_dir / "telemetry.parquet")
+    assert result["event_recall"] == expected_recall
+    assert result["mean_event_coverage"] == pytest.approx(expected_coverage, abs=0.06)
+    assert result["false_positive_windows"] == expected_false_positives
 
 
 def test_event_benchmark_rejects_invalid_prediction_scores(tmp_path):
@@ -119,6 +156,24 @@ def test_event_benchmark_rejects_reversed_prediction_interval(tmp_path):
     }) + "\n")
     with pytest.raises(ValueError, match="end after start"):
         evaluate(run_dir / "ground_truth.json", predictions, tmp_path / "out", telemetry_path=run_dir / "telemetry.parquet")
+
+
+def test_event_benchmark_threshold_tie_is_included_and_naive_timestamps_rejected(tmp_path):
+    run_dir = tmp_path / "run"
+    write_run(fixture_scenario(), 5, run_dir)
+    predictions = tmp_path / "predictions.jsonl"
+    predictions.write_text(json.dumps({
+        "asset_id": "ASSET-01", "window_start": "2025-01-01T00:00:00+00:00",
+        "window_end": "2025-01-01T00:00:01+00:00", "irregularity_score": 0.5,
+    }) + "\n", encoding="utf-8")
+    result = evaluate(run_dir / "ground_truth.json", predictions, tmp_path / "out", threshold=0.5, telemetry_path=run_dir / "telemetry.parquet")
+    assert result["false_positive_windows"] == 1
+    predictions.write_text(json.dumps({
+        "asset_id": "ASSET-01", "window_start": "2025-01-01T00:00:00",
+        "window_end": "2025-01-01T00:00:01", "irregularity_score": 0.5,
+    }) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="must include a timezone"):
+        evaluate(run_dir / "ground_truth.json", predictions, tmp_path / "out-naive", telemetry_path=run_dir / "telemetry.parquet")
 
 
 def test_event_benchmark_rejects_non_string_asset_id(tmp_path):
@@ -293,7 +348,12 @@ def test_randomized_training_dataset_has_mixed_faults_and_auditable_partitions(t
     assert len({run["scenario_sha256"] for run in manifest["runs"]}) == 300
     for run in manifest["runs"]:
         truth = json.loads((output / run["partition"] / run["run_id"] / "ground_truth.json").read_text(encoding="utf-8"))
-        assert all(event["affected_signals"] for event in truth["events"])
+        assert all(event["affected_signals"] == [] for event in truth["events"] if event["severity"] == 0)
+        assert all(
+            event["affected_signals"]
+            or (event["type"] == "missing_telemetry" and event["parameters"].get("loss_pct", 0) < 100)
+            for event in truth["events"] if event["severity"] > 0
+        )
         assert truth["ground_truth_schema_version"] == "1.1.0"
         by_asset = {}
         for event in truth["events"]:
@@ -331,29 +391,121 @@ def test_missing_telemetry_uses_configured_loss_and_records_event_interval():
 
 @pytest.mark.parametrize("loss_pct", [5, 10, 25, 50, 100])
 def test_missing_telemetry_accepts_required_loss_rates(loss_pct):
-    baseline = simulate(fixture_scenario(), 17)[0]
-    scenario = fixture_scenario(anomaly={
+    baseline = simulate(Scenario.model_validate({**fixture_scenario().model_dump(), "sampling_jitter_ms": 0}), 17)[0]
+    scenario = Scenario.model_validate({**fixture_scenario().model_dump(), "sampling_jitter_ms": 0, "anomalies": [{
         "type": "missing_telemetry", "asset": "ASSET-01", "start": 5,
-        "duration": 15, "parameters": {"loss_pct": loss_pct},
-    })
+        "duration": 15, "severity": 1.0, "parameters": {"loss_pct": loss_pct},
+    }]})
     telemetry, _, _ = simulate(scenario, 17)
-    # Compare the same seeded samples with a no-loss baseline.
-    def in_event(frame):
-        epoch_start = int(EPOCH.timestamp() * 1000)
-        return frame.filter(
-            (pl.col("timestamp").dt.epoch("ms") >= epoch_start + 6_000) &
-            (pl.col("timestamp").dt.epoch("ms") < epoch_start + 20_000)
-        ).height
+    # Count missing signal/timestamp pairs against the expected grid.
+    event_start_ms = int(EPOCH.timestamp() * 1000) + 6_000
+    event_end_ms = int(EPOCH.timestamp() * 1000) + 20_000
+    expected_rows = baseline.filter(
+        (pl.col("timestamp").dt.epoch("ms") >= event_start_ms) &
+        (pl.col("timestamp").dt.epoch("ms") < event_end_ms)
+    ).select("timestamp", "tag_id")
+    actual_rows = telemetry.select("timestamp", "tag_id")
+    missing = expected_rows.join(actual_rows, on=["timestamp", "tag_id"], how="anti")
+    expected = expected_rows.height
+    observed_loss = missing.height / expected
+    if loss_pct == 100:
+        assert missing.height > 0
+    else:
+        assert abs(observed_loss - loss_pct / 100) <= 0.28
+    if loss_pct == 100:
+        assert telemetry.filter(
+            (pl.col("timestamp").dt.epoch("ms") >= event_start_ms) &
+            (pl.col("timestamp").dt.epoch("ms") < event_end_ms)
+        ).height == 0
+    else:
+        assert telemetry.filter(
+            (pl.col("timestamp").dt.epoch("ms") >= event_start_ms) &
+            (pl.col("timestamp").dt.epoch("ms") < event_end_ms)
+        ).height > 0
 
-    expected, actual = in_event(baseline), in_event(telemetry)
-    observed_loss = (expected - actual) / expected
-    assert abs(observed_loss - loss_pct / 100) <= 0.15
-    # 100% loss means no rows in the event, lower percentages retain some rows.
-    event_rows = telemetry.filter(
-        (pl.col("timestamp") >= pl.datetime(2025, 1, 1, 0, 0, 6, time_zone="UTC")) &
-        (pl.col("timestamp") < pl.datetime(2025, 1, 1, 0, 0, 20, time_zone="UTC"))
-    ).height
-    assert (event_rows == 0) if loss_pct == 100 else (event_rows > 0)
+
+@pytest.mark.parametrize("severity", [0.0, 0.5, 1.0])
+def test_severity_scales_sensor_bias_monotonically(severity):
+    signal = "spindle_power_kw"
+    scenario = Scenario.model_validate({**fixture_scenario().model_dump(), "sampling_jitter_ms": 0, "anomalies": [{
+        "type": "sensor_bias", "asset": "ASSET-01", "start": 5,
+        "duration": 10, "severity": severity,
+        "parameters": {"signal": signal, "bias": 100.0},
+    }]})
+    baseline = simulate(Scenario.model_validate({**fixture_scenario().model_dump(), "sampling_jitter_ms": 0}), 23)[0]
+    telemetry, truth, _ = simulate(scenario, 23)
+    joined = baseline.join(telemetry, on=["timestamp", "tag_id"], suffix="_anomalous")
+    affected = joined.filter(pl.col("tag_id") == signal)
+    event_start_ms = int(EPOCH.timestamp() * 1000) + 5_000
+    event_end_ms = int(EPOCH.timestamp() * 1000) + 15_000
+    affected = affected.filter(
+        (pl.col("timestamp").dt.epoch("ms") >= event_start_ms) &
+        (pl.col("timestamp").dt.epoch("ms") < event_end_ms)
+    )
+    delta = (affected["value_anomalous"] - affected["value"]).mean()
+    assert delta == pytest.approx(100 * severity, abs=10)
+    assert truth["events"][0]["severity"] == severity
+
+
+def test_missing_telemetry_severity_scales_loss_probability():
+    baseline = simulate(Scenario.model_validate({**fixture_scenario().model_dump(), "sampling_jitter_ms": 0}), 31)[0]
+    observed = []
+    for severity in (0.25, 0.5, 1.0):
+        scenario = Scenario.model_validate({**fixture_scenario().model_dump(), "sampling_jitter_ms": 0, "anomalies": [{
+            "type": "missing_telemetry", "asset": "ASSET-01", "start": 5,
+            "duration": 15, "severity": severity,
+            "parameters": {"loss_pct": 80},
+        }]})
+        telemetry, _, _ = simulate(scenario, 31)
+        baseline = simulate(Scenario.model_validate({**fixture_scenario().model_dump(), "sampling_jitter_ms": 0}), 31)[0]
+        event_start = pl.datetime(2025, 1, 1, 0, 0, 6, time_zone="UTC")
+        event_end = pl.datetime(2025, 1, 1, 0, 0, 20, time_zone="UTC")
+        expected = baseline.filter((pl.col("timestamp") >= event_start) & (pl.col("timestamp") < event_end)).height
+        actual = telemetry.filter((pl.col("timestamp") >= event_start) & (pl.col("timestamp") < event_end)).height
+        observed.append((expected - actual) / expected)
+    assert observed == sorted(observed)
+    assert observed[0] < observed[1] < observed[2]
+    assert observed[0] == pytest.approx(0.2, abs=0.15)
+    assert observed[-1] == pytest.approx(0.8, abs=0.15)
+
+
+def test_missing_telemetry_masks_vary_by_run_seed_and_reproduce_with_same_seed():
+    scenario = Scenario.model_validate({**fixture_scenario().model_dump(), "sampling_jitter_ms": 0, "anomalies": [{
+        "type": "missing_telemetry", "asset": "ASSET-01", "start": 5,
+        "duration": 15, "severity": 1.0, "parameters": {"loss_pct": 50},
+    }]})
+    first = simulate(scenario, 101)[0]
+    repeated = simulate(scenario, 101)[0]
+    second_seed = simulate(scenario, 102)[0]
+    assert first.equals(repeated)
+    first_keys = set(first.with_columns(pl.col("timestamp").dt.epoch("ms")).select("timestamp", "tag_id").iter_rows())
+    second_keys = set(second_seed.with_columns(pl.col("timestamp").dt.epoch("ms")).select("timestamp", "tag_id").iter_rows())
+    assert first_keys != second_keys
+
+
+@pytest.mark.parametrize("loss_pct", [5, 10, 25, 50, 100])
+def test_missing_telemetry_empirical_rate_over_independent_seeds(loss_pct):
+    scenario = Scenario.model_validate({**fixture_scenario().model_dump(), "sampling_jitter_ms": 0, "anomalies": [{
+        "type": "missing_telemetry", "asset": "ASSET-01", "start": 5,
+        "duration": 15, "severity": 1.0, "parameters": {"loss_pct": loss_pct},
+    }]})
+    expected = 0
+    omitted = 0
+    for seed in range(200, 240):
+        baseline = simulate(Scenario.model_validate({**fixture_scenario().model_dump(), "sampling_jitter_ms": 0}), seed)[0]
+        actual = simulate(scenario, seed)[0]
+        start_ms = int(EPOCH.timestamp() * 1000) + 6_000
+        end_ms = int(EPOCH.timestamp() * 1000) + 20_000
+        expected_rows = baseline.filter(
+            (pl.col("timestamp").dt.epoch("ms") >= start_ms) & (pl.col("timestamp").dt.epoch("ms") < end_ms)
+        ).select("timestamp", "tag_id")
+        actual_rows = actual.select("timestamp", "tag_id")
+        expected += expected_rows.height
+        omitted += expected_rows.join(actual_rows, on=["timestamp", "tag_id"], how="anti").height
+    if loss_pct == 100:
+        assert omitted == expected
+    else:
+        assert omitted / expected == pytest.approx(loss_pct / 100, abs=0.012)
 
 
 @pytest.mark.parametrize("asset_class", ["cnc", "pump", "compressor", "conveyor"])
@@ -458,6 +610,72 @@ def test_batch_refuses_existing_dataset_output_to_prevent_stale_runs(tmp_path):
     (output / "old-run").mkdir()
     with pytest.raises(FileExistsError, match="must not already exist"):
         batch(Path("suites/training-v0.2.yaml"), 2, output, seed=42)
+
+
+def test_resumable_batch_recovers_completed_runs_and_matches_clean_generation(tmp_path, monkeypatch):
+    from ot_lab import simulation
+
+    suite = tmp_path / "suite.yaml"
+    suite.write_text("""suite_id: resume-test
+suite_version: 1
+partitions: {train: 0.5, validation: 0.25, test: 0.25}
+scenario:
+  scenario_id: resume-test
+  duration_s: 12
+  sampling_interval_ms: 1000
+  assets: [{asset_id: P-1, asset_class: pump}]
+generation:
+  vary: {ambient_temperature_c: {min: 18, max: 24}}
+""", encoding="utf-8")
+    resumable = tmp_path / "resumable"
+    original = simulation.write_run
+    completed = 0
+
+    def interrupt_after_two(*args, **kwargs):
+        nonlocal completed
+        completed += 1
+        if completed == 3:
+            raise RuntimeError("simulated interruption")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(simulation, "write_run", interrupt_after_two)
+    with pytest.raises(RuntimeError, match="simulated interruption"):
+        simulation.batch(suite, 8, resumable, seed=912, resume=True)
+    checkpoint_dirs = [path for path in resumable.glob("*/train-*") if path.is_dir()]
+    assert len(checkpoint_dirs) == 2
+    monkeypatch.setattr(simulation, "write_run", original)
+    simulation.batch(suite, 8, resumable, seed=912, resume=True)
+    clean = tmp_path / "clean"
+    simulation.batch(suite, 8, clean, seed=912)
+    resumed_manifest = json.loads((resumable / "dataset_manifest.json").read_text())
+    clean_manifest = json.loads((clean / "dataset_manifest.json").read_text())
+    assert [(run["run_id"], run["seed"], run["telemetry_sha256"]) for run in resumed_manifest["runs"]] == [
+        (run["run_id"], run["seed"], run["telemetry_sha256"]) for run in clean_manifest["runs"]
+    ]
+    assert not (resumable / ".resume.json").exists()
+
+
+def test_resumable_batch_rejects_changed_suite_or_seed(tmp_path):
+    suite = tmp_path / "suite.yaml"
+    suite.write_text("""partitions: {train: 0.5, validation: 0.25, test: 0.25}
+scenario: {scenario_id: x, duration_s: 5, sampling_interval_ms: 1000, assets: [{asset_id: A, asset_class: pump}]}
+""", encoding="utf-8")
+    output = tmp_path / "resume"
+    from ot_lab import simulation
+    from ot_lab.simulation import batch
+
+    original = simulation.write_run
+    def stop_run(*_args, **_kwargs):
+        raise RuntimeError("stop with checkpoint")
+    simulation.write_run = stop_run
+    with pytest.raises(RuntimeError, match="stop with checkpoint"):
+        batch(suite, 4, output, seed=7, resume=True)
+    simulation.write_run = original
+    with pytest.raises(ValueError, match="configuration differs"):
+        batch(suite, 4, output, seed=8, resume=True)
+    suite.write_text(suite.read_text(encoding="utf-8") + "# edited\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="configuration differs"):
+        batch(suite, 4, output, seed=7, resume=True)
 
 
 def test_range_resolution_rejects_invalid_challenge_bounds(tmp_path):

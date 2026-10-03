@@ -14,9 +14,10 @@ PREDICTION_COLUMNS = {"asset_id", "window_start", "window_end", "irregularity_sc
 
 
 def _time(value: Any) -> datetime:
-    if isinstance(value, datetime):
-        return value
-    return datetime.fromisoformat(str(value))
+    parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    if parsed.tzinfo is None:
+        raise ValueError("prediction and ground-truth timestamps must include a timezone")
+    return parsed
 
 
 def _event_detection_metrics(events: list[dict[str, Any]], predictions: pl.DataFrame, threshold: float, overlap: float, exposure_hours: float) -> dict[str, Any]:
@@ -85,9 +86,6 @@ def _event_detection_metrics(events: list[dict[str, Any]], predictions: pl.DataF
     precision = tp / (tp + fp) if tp + fp else 0.0
     recall = tp / (tp + fn) if tp + fn else 0.0
     f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
-    window_precision = tp_windows / (tp_windows + fp) if tp_windows + fp else 0.0
-    window_recall = tp_windows / len(selected) if selected else 0.0
-    window_f1 = 2 * window_precision * window_recall / (window_precision + window_recall) if window_precision + window_recall else 0.0
     exposure_hours = max(exposure_hours, 1e-9)
     latencies = [e["time_to_first_detection_s"] for e in matched_events if e["detected"] and e["time_to_first_detection_s"] is not None]
     event_types = sorted({event["type"] for event in events})
@@ -103,11 +101,9 @@ def _event_detection_metrics(events: list[dict[str, Any]], predictions: pl.DataF
         "threshold": threshold, "overlap_threshold": overlap,
         "precision": precision, "recall": recall, "f1": f1,
         "event_precision": precision, "event_recall": recall, "event_f1": f1,
-        "window_precision": window_precision, "window_recall": window_recall,
-        "window_f1": window_f1,
         "event_detection_rate": recall, "true_positive_events": int(tp),
         "false_positive_windows": fp, "missed_events": int(fn),
-        "true_positive_windows": tp_windows,
+        "event_overlapping_alert_windows": tp_windows,
         "false_positive_duration_s": false_positive_duration_s,
         "false_positives_per_asset_hour": fp / exposure_hours,
         "false_positives_per_asset_day": fp / exposure_hours * 24,

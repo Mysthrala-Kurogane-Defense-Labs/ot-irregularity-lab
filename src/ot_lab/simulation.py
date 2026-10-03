@@ -184,7 +184,7 @@ def _event_active(event: Any, seconds: float) -> bool:
 
 def _affect(
     event: Any, signals: dict[str, float], seconds: float,
-    states: dict[str, ProcessState], asset_class: str,
+    states: dict[str, ProcessState], asset_class: str, sample_index: int, run_seed: int,
 ) -> tuple[dict[str, float], set[str], str]:
     """Apply a named physical/measurement/communications effect, returning label metadata."""
     affected: set[str] = set()
@@ -192,6 +192,10 @@ def _affect(
     kind = event.type
     fraction = min(1.0, max(0.0, (seconds - event.start) / max(event.duration, 1)))
     p = event.parameters
+    # Severity scales continuous effects from 0 (no process perturbation) to
+    # 1 (the configured parameter magnitude). Categorical effects such as an
+    # outage or quality flag remain categorical; their severity is a label.
+    severity_scale = float(np.clip(event.severity, 0.0, 1.0))
     def pick(*names: str) -> list[str]:
         return [name for name in signals if name in names or any(fragment in name for fragment in names)]
     if kind == "bearing_degradation":
@@ -201,36 +205,36 @@ def _affect(
         progress = fraction if progression == "linear" else min(1.0, fraction**2) if progression == "slow_start" else fraction**0.5 if progression == "fast_start" else None
         if progress is None:
             raise ValueError(f"unsupported bearing progression {progression!r}")
-        gain = float(p.get("vibration_gain", 0.20)) * progress
-        tgain = float(p.get("temperature_gain", 0.08)) * progress
+        affected.update(vib + temp)
+        gain = float(p.get("vibration_gain", 0.20)) * progress * severity_scale
+        tgain = float(p.get("temperature_gain", 0.08)) * progress * severity_scale
         for name in vib:
             signals[name] *= 1 + gain
         for name in temp:
             signals[name] += 15 * tgain
-        affected.update(vib + temp)
     elif kind == "cavitation":
         for name in pick("vibration_mm_s", "spindle_vibration_mm_s"):
-            signals[name] += float(p.get("vibration_gain", 0.8)) * fraction
+            signals[name] += float(p.get("vibration_gain", 0.8)) * fraction * severity_scale
             affected.add(name)
         for name in pick("flow_l_min"):
-            signals[name] *= 1 - float(p.get("flow_loss", 0.12)) * fraction
+            signals[name] *= 1 - float(p.get("flow_loss", 0.12)) * fraction * severity_scale
             affected.add(name)
         for name in pick("pressure_bar", "coolant_pressure_bar"):
-            signals[name] *= 1 - float(p.get("pressure_loss", 0.10)) * fraction
+            signals[name] *= 1 - float(p.get("pressure_loss", 0.10)) * fraction * severity_scale
             affected.add(name)
         for name in pick("motor_current_a"):
-            signals[name] *= 1 + float(p.get("current_gain", 0.05)) * fraction
+            signals[name] *= 1 + float(p.get("current_gain", 0.05)) * fraction * severity_scale
             affected.add(name)
     elif kind == "cooling_degradation":
         for name in pick("temperature_c", "oil_temperature_c", "discharge_temperature_c", "spindle_temperature_c"):
-            signals[name] += float(p.get("temperature_gain", 0.08)) * 35 * fraction
+            signals[name] += float(p.get("temperature_gain", 0.08)) * 35 * fraction * severity_scale
             affected.add(name)
     elif kind == "mechanical_overload":
         for name in pick("motor_current_a", "spindle_power_kw"):
-            signals[name] *= 1 + float(p.get("current_gain", 0.12)) * fraction
+            signals[name] *= 1 + float(p.get("current_gain", 0.12)) * fraction * severity_scale
             affected.add(name)
         for name in pick("vibration_mm_s"):
-            signals[name] *= 1 + float(p.get("vibration_gain", 0.20)) * fraction
+            signals[name] *= 1 + float(p.get("vibration_gain", 0.20)) * fraction * severity_scale
             affected.add(name)
     elif kind == "sensor_drift":
         names = [str(p["signal"])] if "signal" in p else list(signals)
@@ -238,7 +242,7 @@ def _affect(
             raise ValueError("sensor_drift references a signal absent from the target asset")
         for name in names:
             if name in signals:
-                signals[name] += float(p.get("rate_per_minute", 0.5)) * (seconds - event.start) / 60
+                signals[name] += float(p.get("rate_per_minute", 0.5)) * severity_scale * (seconds - event.start) / 60
                 affected.add(name)
     elif kind == "sensor_bias":
         names = [str(p["signal"])] if "signal" in p else list(signals)
@@ -246,7 +250,7 @@ def _affect(
             raise ValueError("sensor_bias references a signal absent from the target asset")
         for name in names:
             if name in signals:
-                signals[name] += float(p.get("bias", 1.0))
+                signals[name] += float(p.get("bias", 1.0)) * severity_scale
                 affected.add(name)
     elif kind == "sudden_spike":
         names = [str(p["signal"])] if "signal" in p else [next(iter(signals))]
@@ -254,7 +258,7 @@ def _affect(
             raise ValueError("sudden_spike references a signal absent from the target asset")
         for name in names:
             if name in signals:
-                signals[name] += float(p.get("magnitude", 5.0))
+                signals[name] += float(p.get("magnitude", 5.0)) * severity_scale
                 affected.add(name)
     elif kind == "sensor_stuck":
         names = [str(p["signal"])] if "signal" in p else [next(iter(signals))]
@@ -282,23 +286,25 @@ def _affect(
         loss_pct = float(p.get("loss_pct", 100 if kind == "asset_communication_loss" else 25))
         if not 0 <= loss_pct <= 100:
             raise ValueError("loss_pct must be within 0..100")
+        loss_pct *= severity_scale
         if loss_pct >= 100:
             affected.update(signals)
             signals.clear()
         else:
             for name in list(signals):
                 # Stable hashed selection per timestamp, no hidden state or extra RNG consumption.
-                token = f"{event.asset}|{name}|{int(seconds * 1000)}|{event.start}".encode()
-                if int(hashlib.sha256(token).hexdigest()[:8], 16) % 100 < loss_pct:
-                    signals.pop(name)
+                token = f"{run_seed}|{event.asset}|{name}|{sample_index}|{event.start}".encode()
+                draw = int(hashlib.sha256(token).hexdigest()[:8], 16) / 0x100000000
+                if (severity_scale >= 1 and loss_pct >= 100) or draw < loss_pct / 100:
                     affected.add(name)
+                    signals.pop(name)
     elif kind == "quality_degradation":
         quality = "BAD"
         affected.update(signals)
     elif kind == "regime_mismatch":
         targets = pick("load_pct", "spindle_power_kw", "motor_current_a", "feed_rate")
         for name in targets:
-            signals[name] *= float(p.get("load_multiplier", 0.7))
+            signals[name] *= 1 - (1 - float(p.get("load_multiplier", 0.7))) * severity_scale
             affected.add(name)
     elif kind == "multivariate_novelty":
         # Each selected channel remains inside engineering bounds; the joint pattern is unusual.
@@ -311,25 +317,26 @@ def _affect(
                 _, _, lo, hi = signal_metadata(asset_class)[name]
                 if not 0 <= pct <= 1:
                     raise ValueError("multivariate_novelty signal percentages must be within 0..1")
-                signals[name] = lo + pct * (hi - lo)
+                signals[name] = lo + (pct * severity_scale) * (hi - lo)
                 affected.add(name)
         else:
             # High-normal thermal/vibration values paired with low-normal power/current.
             for name in pick("temperature_c", "oil_temperature_c", "spindle_temperature_c"):
                 _, _, lo, hi = signal_metadata(asset_class)[name]
-                signals[name] = float(np.clip(max(signals[name], lo + 0.78 * (hi - lo)), lo, hi))
+                signals[name] = float(np.clip(signals[name] + severity_scale * max(0, lo + 0.78 * (hi - lo) - signals[name]), lo, hi))
                 affected.add(name)
             for name in pick("vibration_mm_s", "spindle_vibration_mm_s"):
                 _, _, lo, hi = signal_metadata(asset_class)[name]
-                signals[name] = float(np.clip(max(signals[name], lo + 0.75 * (hi - lo)), lo, hi))
+                signals[name] = float(np.clip(signals[name] + severity_scale * max(0, lo + 0.75 * (hi - lo) - signals[name]), lo, hi))
                 affected.add(name)
             for name in pick("spindle_power_kw", "motor_current_a"):
                 bounds = signal_metadata(asset_class)[name]
-                signals[name] = float(np.clip(min(signals[name], bounds[2] + 0.25 * (bounds[3] - bounds[2])), bounds[2], bounds[3]))
+                target = bounds[2] + 0.25 * (bounds[3] - bounds[2])
+                signals[name] = float(np.clip(signals[name] + severity_scale * min(0, target - signals[name]), bounds[2], bounds[3]))
                 affected.add(name)
     elif kind == "maintenance_activity":
         for name in pick("motor_current_a", "spindle_power_kw", "load_pct"):
-            signals[name] *= float(p.get("load_multiplier", 0.1))
+            signals[name] *= 1 - (1 - float(p.get("load_multiplier", 0.1))) * severity_scale
             affected.add(name)
     return signals, affected, quality
 
@@ -339,6 +346,7 @@ def simulate(scenario: Scenario, seed: int) -> tuple[pl.DataFrame, dict[str, Any
     origin = EPOCH
     rows: list[dict[str, Any]] = []
     events: list[dict[str, Any]] = []
+    affected_by_event: dict[str, set[str]] = {}
     regime_intervals: list[dict[str, str]] = []
     active_regimes: dict[str, dict[str, str]] = {}
     jitter = scenario.sampling_jitter_ms
@@ -352,6 +360,7 @@ def simulate(scenario: Scenario, seed: int) -> tuple[pl.DataFrame, dict[str, Any
             end=origin + timedelta(seconds=anomaly.start + anomaly.duration),
             affected_signals=[], severity=anomaly.severity, parameters=anomaly.parameters,
         ).model_dump(mode="json"))
+        affected_by_event[f"evt-{index}"] = set()
     step_ms = scenario.sampling_interval_ms
     n_steps = int(scenario.duration_s * 1000 / step_ms)
     states = {asset.asset_id: ProcessState(temperature=scenario.ambient_temperature_c) for asset in scenario.assets}
@@ -383,10 +392,10 @@ def simulate(scenario: Scenario, seed: int) -> tuple[pl.DataFrame, dict[str, Any
                 if anomaly.asset == asset.asset_id and _event_active(anomaly, seconds):
                     active_events.append(anomaly)
                     before = set(signals)
-                    signals, affected, quality = _affect(anomaly, signals, seconds, states, asset.asset_class)
+                    signals, affected, quality = _affect(anomaly, signals, seconds, states, asset.asset_class, step, seed)
                     event_index = scenario.anomalies.index(anomaly) + 1
                     event_record = next(e for e in events if e["event_id"] == f"evt-{event_index}")
-                    event_record["affected_signals"] = sorted(set(event_record["affected_signals"]) | affected)
+                    affected_by_event[event_record["event_id"]].update(affected)
                     if anomaly.type == "quality_degradation":
                         for name in before & set(signals):
                             quality_by_signal[name] = quality
@@ -416,11 +425,14 @@ def simulate(scenario: Scenario, seed: int) -> tuple[pl.DataFrame, dict[str, Any
             for event in active_events:
                 event_index = scenario.anomalies.index(event) + 1
                 event_record = next(e for e in events if e["event_id"] == f"evt-{event_index}")
-                event_record.setdefault("observed_start", timestamp.isoformat())
-                event_record["observed_end"] = timestamp.isoformat()
+                if event_record["severity"] > 0:
+                    event_record.setdefault("observed_start", timestamp.isoformat())
+                    event_record["observed_end"] = timestamp.isoformat()
     run_end = (origin + timedelta(seconds=scenario.duration_s)).isoformat()
     for active_regime in active_regimes.values():
         active_regime["end"] = run_end
+    for event in events:
+        event["affected_signals"] = sorted(affected_by_event[event["event_id"]])
     telemetry = pl.DataFrame(rows, schema={
         "schema_version": pl.String, "run_id": pl.String,
         "timestamp": pl.Datetime("ms", "UTC"), "asset_id": pl.String,
@@ -478,9 +490,12 @@ def replay(run_dir: Path, output: Path | None = None) -> Path:
     return target
 
 
-def batch(suite_path: Path, runs: int, output: Path, seed: int) -> None:
+def batch(suite_path: Path, runs: int, output: Path, seed: int, resume: bool = False) -> None:
     if runs <= 0:
         raise ValueError("runs must be positive")
+    if resume:
+        _resume_batch(suite_path, runs, output, seed)
+        return
     if output.exists():
         raise FileExistsError(f"dataset output path must not already exist: {output}")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -490,7 +505,102 @@ def batch(suite_path: Path, runs: int, output: Path, seed: int) -> None:
         staging_output.replace(output)
 
 
-def _batch_to_directory(suite_path: Path, runs: int, output: Path, seed: int, command_output: Path | None = None) -> None:
+def _resume_batch(suite_path: Path, runs: int, output: Path, seed: int) -> None:
+    """Continue a checkpointed batch in deterministic run order; publish only when complete."""
+    if runs <= 0:
+        raise ValueError("runs must be positive")
+    if output.exists() and not output.is_dir():
+        raise FileExistsError(f"dataset output path is not a directory: {output}")
+    output.mkdir(parents=True, exist_ok=True)
+    config = {
+        "suite_sha256": hashlib.sha256(suite_path.read_bytes()).hexdigest(),
+        "runs": runs,
+        "seed": seed,
+        "simulator_version": __version__,
+        "schema_version": SCHEMA_VERSION,
+    }
+    config_path = output / ".resume.json"
+    if config_path.exists():
+        existing = json.loads(config_path.read_text(encoding="utf-8"))
+        if existing != config:
+            raise ValueError("resume configuration differs from checkpoint; use a fresh output directory")
+    else:
+        if any(output.iterdir()):
+            raise FileExistsError(f"resume output contains files but no compatible checkpoint: {output}")
+        config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    suite = yaml.safe_load(suite_path.read_text(encoding="utf-8"))
+    partitions = suite.get("partitions", {"train": 0.7, "validation": 0.15, "test": 0.15})
+    if "challenge" in {name.lower() for name in partitions}:
+        raise ValueError("challenge partitions must use ephemeral challenge generation")
+    if not {"train", "validation", "test"}.issubset(partitions):
+        raise ValueError("partitions must define train, validation, and test")
+    if any(not np.isfinite(value) or value < 0 for value in partitions.values()) or abs(sum(partitions.values()) - 1.0) > 1e-9:
+        raise ValueError("partition fractions must be finite, non-negative, and sum to 1")
+    counts = {key: int(runs * value) for key, value in partitions.items()}
+    counts[list(partitions)[-1]] += runs - sum(counts.values())
+    seed_rng = np.random.default_rng(seed)
+    used_seeds: set[int] = set()
+    run_specs: list[tuple[str, int, str, int]] = []
+    for partition, count in counts.items():
+        for index in range(count):
+            run_seed = int(seed_rng.integers(0, 2**63, dtype=np.int64))
+            while run_seed in used_seeds:
+                run_seed = int(seed_rng.integers(0, 2**63, dtype=np.int64))
+            used_seeds.add(run_seed)
+            run_specs.append((partition, index, f"{partition}-{index+1:05d}", run_seed))
+    for partition, index, run_id, run_seed in run_specs:
+        run_dir = output / partition / run_id
+        if (run_dir / "run_metadata.json").is_file() and (run_dir / "ground_truth.json").is_file() and (run_dir / "telemetry.parquet").is_file():
+            metadata = json.loads((run_dir / "run_metadata.json").read_text(encoding="utf-8"))
+            if metadata.get("seed") != run_seed:
+                raise ValueError(f"checkpoint run seed mismatch: {run_dir}")
+            continue
+        if run_dir.exists():
+            import shutil
+            shutil.rmtree(run_dir)
+        local_rng = np.random.default_rng(run_seed)
+        base = suite["scenario"]
+        generation = suite.get("generation", {})
+        scenario_data = _generate_suite_scenario(base, generation, local_rng, run_id) if generation else json.loads(json.dumps(base))
+        scenario_data["run_id"] = run_id
+        scenario_data = _resolve_ranges(scenario_data, local_rng)
+        scenario_data["run_id"] = run_id
+        scenario = Scenario.model_validate(resolve_profiles(scenario_data))
+        write_run(scenario, run_seed, run_dir)
+    # Finalizing reuses the normal manifest and partition builder, then removes only temporary state.
+    _finalize_resumable_batch(suite_path, runs, output, seed)
+
+
+def _finalize_resumable_batch(suite_path: Path, runs: int, output: Path, seed: int) -> None:
+    """Build final files in a sibling staging directory, then atomically replace the checkpoint."""
+    import shutil
+
+    staging = Path(tempfile.mkdtemp(prefix=f".{output.name}.finalize-", dir=output.parent))
+    try:
+        for path in output.iterdir():
+            if path.name == ".resume.json":
+                continue
+            target = staging / path.name
+            if path.is_dir():
+                shutil.copytree(path, target)
+            else:
+                shutil.copy2(path, target)
+        _batch_to_directory(suite_path, runs, staging, seed, resume_existing=True)
+        (staging / ".resume.json").unlink(missing_ok=True)
+        backup = output.with_name(f".{output.name}.checkpoint")
+        if backup.exists():
+            shutil.rmtree(backup)
+        output.replace(backup)
+        try:
+            staging.replace(output)
+        except Exception:
+            backup.replace(output)
+            raise
+        shutil.rmtree(backup)
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
+def _batch_to_directory(suite_path: Path, runs: int, output: Path, seed: int, command_output: Path | None = None, resume_existing: bool = False) -> None:
     if runs <= 0:
         raise ValueError("runs must be positive")
     output.mkdir(parents=True, exist_ok=True)
@@ -537,8 +647,17 @@ def _batch_to_directory(suite_path: Path, runs: int, output: Path, seed: int, co
             scenario_data["run_id"] = run_id
             scenario = Scenario.model_validate(resolve_profiles(scenario_data))
             run_dir = output / partition / scenario.run_id
-            write_run(scenario, run_seed, run_dir)
-            (run_dir / "scenario.yaml").write_text(yaml.safe_dump(scenario.model_dump(mode="json"), sort_keys=False), encoding="utf-8")
+            if resume_existing and (run_dir / "run_metadata.json").is_file() and (run_dir / "ground_truth.json").is_file() and (run_dir / "telemetry.parquet").is_file():
+                metadata = json.loads((run_dir / "run_metadata.json").read_text(encoding="utf-8"))
+                expected_hash = hashlib.sha256(json.dumps(scenario.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                if metadata.get("seed") != run_seed or metadata.get("scenario_sha256") != expected_hash:
+                    raise ValueError(f"checkpoint run does not match deterministic scenario: {run_dir}")
+            else:
+                if run_dir.exists():
+                    import shutil
+                    shutil.rmtree(run_dir)
+                write_run(scenario, run_seed, run_dir)
+                (run_dir / "scenario.yaml").write_text(yaml.safe_dump(scenario.model_dump(mode="json"), sort_keys=False), encoding="utf-8")
             digest = hashlib.sha256((run_dir / "telemetry.parquet").read_bytes()).hexdigest()
             manifest_runs.append({
                 "partition": partition, "run_id": scenario.run_id, "seed": run_seed,
@@ -608,6 +727,7 @@ def _batch_to_directory(suite_path: Path, runs: int, output: Path, seed: int, co
         "event_distribution_by_partition": event_distribution_by_partition,
         "regime_episode_distribution": regime_distribution,
         "regime_duration_s": regime_duration_s,
+        "generation_complete": True,
         "synthetic": True, "generated": True, "customer_data": False,
     }
     (output / "dataset_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -619,11 +739,19 @@ def generate_challenge(suite_path: Path, output: Path, master_seed: int | None =
     suite = yaml.safe_load(suite_path.read_text(encoding="utf-8"))
     seed = int(np.random.SeedSequence().generate_state(1, dtype=np.uint64)[0]) if master_seed is None else master_seed
     case_dir = output / "case"
-    scenario_data = json.loads(json.dumps(suite["scenario"]))
-    scenario_data["run_id"] = f"challenge-{hashlib.sha256(str(seed).encode()).hexdigest()[:12]}"
+    base = json.loads(json.dumps(suite["scenario"]))
+    generation = suite.get("generation", {})
+    # A fixed opaque ID prevents the model input from revealing the hidden seed.
+    run_id = "challenge-hidden"
+    if generation:
+        generation["anomaly_probability"] = 1.0
+        scenario_data = _generate_suite_scenario(base, generation, np.random.default_rng(seed), run_id)
+    else:
+        scenario_data = base
+    scenario_data["run_id"] = run_id
     rng = np.random.default_rng(seed)
     scenario_data = _resolve_ranges(scenario_data, rng)
-    scenario_data["run_id"] = f"challenge-{hashlib.sha256(str(seed).encode()).hexdigest()[:12]}"
+    scenario_data["run_id"] = run_id
     scenario_data = resolve_profiles(scenario_data)
     scenario = Scenario.model_validate(scenario_data)
     write_run(scenario, seed, case_dir, persist_scenario=False)

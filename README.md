@@ -2,7 +2,7 @@
 
 OT Irregularity Lab is an independent, open source preview toolkit for generating and replaying synthetic industrial telemetry with known, separately stored ground truth. It is model-agnostic: it contains no anomaly detector and makes no product, cloud, or customer-data integration a requirement.
 
-All generated data is synthetic, generated, and non-customer data. Process simulation runs without OpenPLC or protocol services. Apache-2.0 applies to the software; a public dataset release will declare its own data license and version.
+All generated data is synthetic, generated, and non-customer data. Process simulation runs without OpenPLC or protocol services. Apache-2.0 applies to the software; dataset releases declare their own data license and version.
 
 ## Preview status
 
@@ -16,9 +16,11 @@ uv run ot-lab batch --suite suites/training.yaml --runs 100 --seed 42 --output d
 uv run ot-lab dataset create --suite suites/training-v0.2.yaml --runs 3000 --seed 20261003 --output datasets/ot-irregularity-training-v0.2
 ```
 
+For long runs, add `--resume` to keep per-run checkpoints after interruption. Re-run with the same suite, run count, seed, and dedicated output directory to continue generation.
+
 The randomized training suite mixes normal process variation with seeded events across all 15 supported event families. Its realized class, event, asset, and regime distributions are recorded in the dataset manifest. See [the synthetic dataset design and source analysis](SYNTHETIC_DATASET_DESIGN.md) for the sampling choices and limits.
 
-The 1,000-run [OT Irregularity Training Dataset v0.2.0](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/releases/tag/dataset-v0.2.0) is published as a release asset under CC BY 4.0. Its `train.parquet`, `validation.parquet`, and `test.parquet` files contain telemetry only; per-run ground truth is stored separately.
+The 1,000-run [OT Irregularity Training Dataset v0.2.0](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/releases/tag/dataset-v0.2.0) is published as a release asset under CC BY 4.0. Its `train.parquet`, `validation.parquet`, and `test.parquet` files contain telemetry only; per-run ground truth is stored separately. A more complete roadmap, including current limitations, lives in [ROADMAP.md](ROADMAP.md).
 
 The model input is `telemetry.parquet`; never pass `ground_truth.json` or `run_metadata.json` to a model submission. The evaluator reads predictions and ground truth in a separate process. Do not mount ground truth into inference containers.
 
