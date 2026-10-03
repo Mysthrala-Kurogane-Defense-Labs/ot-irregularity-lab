@@ -6,6 +6,7 @@
 - 2026-10-03 — [MetroPT-3 calibration and severity semantics](runs/2026-10-03-metropt-calibration.md): full reference CSV integrity and aggregate analysis, opt-in rail APU profile, and severity behavior tests.
 - 2026-10-03 — [Challenge container end-to-end smoke](runs/2026-10-03-challenge-container-smoke.md): single-file mounts and full short challenge verified with local Docker; container change published in `c34cb6c`, normal suite in `c30ea85`, both CI runs passed.
 - 2026-10-03 — [Ephemeral challenge metadata hardening](runs/2026-10-03-challenge-metadata-hardening.md): hidden scenario metadata removed, 20-case regression and separate challenge distribution published; CI runs `37146984474` and `37147259217` passed.
+- 2026-10-03 — [Docker submission output-limit hardening](runs/2026-10-03-docker-output-limit.md): hard process-tree file-size limit, daemon log suppression, and local Docker isolation/overflow smoke.
 
 - 2026-10-03 — [OT Irregularity Training Dataset v0.3.0, 1,000 runs](runs/2026-10-03-training-v0.3-1000.md): published under CC BY 4.0; the public archive download matched its recorded SHA-256.
 - 2026-10-03 — [OT Irregularity Training Dataset v0.4.0, 1,000 runs](runs/2026-10-03-training-v0.4-1000.md): generated with 15 event types and four asset classes; telemetry and independent label archives built and locally verified under CC BY 4.0.

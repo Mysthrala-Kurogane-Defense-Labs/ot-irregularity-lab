@@ -1,5 +1,6 @@
 import io
 import json
+import subprocess
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from pathlib import Path
@@ -1100,7 +1101,10 @@ def test_docker_submission_passes_only_minimal_environment(tmp_path, monkeypatch
     monkeypatch.setattr("ot_lab.submission.shutil.which", lambda _: "docker")
     monkeypatch.setattr("ot_lab.submission.subprocess.Popen", Completed)
     removed = []
-    monkeypatch.setattr("ot_lab.submission.subprocess.run", lambda args, **kwargs: removed.append(args))
+    def docker_side_effect(args, **kwargs):
+        removed.append(args)
+        return subprocess.CompletedProcess(args, 0, b"", b"")
+    monkeypatch.setattr("ot_lab.submission.subprocess.run", docker_side_effect)
     out = tmp_path / "predictions.jsonl"
     run_docker_submission("sample:latest", run_dir, out)
     command = captured["args"]
@@ -1116,9 +1120,12 @@ def test_docker_submission_passes_only_minimal_environment(tmp_path, monkeypatch
     assert all("ground_truth" not in mount and "run_metadata" not in mount and "scenario" not in mount for mount in mounts)
     assert all(",dst=" in mount and "type=bind" in mount for mount in mounts)
     assert any("dst=/ot-lab/input.parquet,readonly" in mount for mount in mounts)
-    assert any("dst=/ot-lab/output.jsonl" in mount for mount in mounts)
+    assert "fsize=67108864:67108864" in command
+    assert "--log-driver=none" in command
+    assert "OT_LAB_OUTPUT=/ot-lab/output.jsonl" in command
     assert "GH_TOKEN" not in [command[i + 1] for i, item in enumerate(command[:-1]) if item == "--env"]
-    assert removed and removed[0][-1] == "fake-container-id"
+    assert removed == [["docker", "rm", "--force", "fake-container-id"]]
+    assert out.read_text() == "{}\n"
 
 
 def test_docker_submission_enforces_prediction_size_limit(tmp_path, monkeypatch):
@@ -1133,7 +1140,7 @@ def test_docker_submission_enforces_prediction_size_limit(tmp_path, monkeypatch)
         def __init__(self, args, **_kwargs):
             Path(args[args.index("--cidfile") + 1]).write_text("fake-container-id")
             mount_arg = args[args.index("--mount", args.index("--mount") + 1) + 1]
-            Path(mount_arg.split("src=", 1)[1].split(",dst=", 1)[0]).write_text("x" * 101)
+            Path(mount_arg.split("src=", 1)[1].split(",dst=", 1)[0]).write_bytes(b"x" * 101)
 
         def poll(self): return self.returncode
         def wait(self): return self.returncode
@@ -1143,7 +1150,9 @@ def test_docker_submission_enforces_prediction_size_limit(tmp_path, monkeypatch)
 
     monkeypatch.setattr("ot_lab.submission.shutil.which", lambda _: "docker")
     monkeypatch.setattr("ot_lab.submission.subprocess.Popen", Completed)
-    monkeypatch.setattr("ot_lab.submission.subprocess.run", lambda *_args, **_kwargs: None)
+    def docker_side_effect(args, **kwargs):
+        return subprocess.CompletedProcess(args, 0, b"", b"")
+    monkeypatch.setattr("ot_lab.submission.subprocess.run", docker_side_effect)
     with pytest.raises(ValueError, match="exceeds 100 bytes"):
         run_docker_submission("sample:latest", run_dir, tmp_path / "predictions.jsonl", max_output_bytes=100)
 

@@ -24,7 +24,7 @@ def _validate_limits(timeout_s: int, max_output_bytes: int) -> None:
 
 def _run_bounded(
     argv: list[str], *, cwd: Path, env: dict[str, str], timeout_s: int,
-    max_output_bytes: int, monitored_output: Path,
+    max_output_bytes: int, monitored_output: Path | None,
 ) -> None:
     """Run while bounding output-file size, wall time, and retained process logs."""
     started = time.monotonic()
@@ -44,7 +44,7 @@ def _run_bounded(
                 if time.monotonic() - started > timeout_s:
                     process.kill()
                     raise TimeoutError(f"submission exceeded timeout of {timeout_s} seconds")
-                if monitored_output.exists() and monitored_output.stat().st_size > max_output_bytes:
+                if monitored_output is not None and monitored_output.exists() and monitored_output.stat().st_size > max_output_bytes:
                     process.kill()
                     raise ValueError(f"submission output exceeds {max_output_bytes} bytes")
                 time.sleep(0.02)
@@ -99,15 +99,15 @@ def run_docker_submission(image: str, run_dir: Path, output: Path, timeout_s: in
         sandbox = Path(tmp).resolve()
         input_path = sandbox / "input.parquet"
         mounted_output = sandbox / "output.jsonl"
-        output_path = sandbox / "container-output.jsonl"
         cid_path = sandbox / "container.cid"
         input_path.write_bytes(telemetry.read_bytes())
-        # Mount a single output file, not a host directory that may contain ground truth.
         mounted_output.touch()
         args = [
             docker, "run", "--cidfile", str(cid_path), "--pull=never", "--rm", "--network=none", "--read-only", "--cap-drop=ALL",
             "--security-opt=no-new-privileges:true", "--pids-limit=128", "--memory=2g",
             "--cpus=2", "--user=65534:65534", "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
+            "--ulimit", f"fsize={max_output_bytes}:{max_output_bytes}",
+            "--log-driver=none",
             "--env", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "--env", "TMPDIR=/tmp",
             "--mount", f"type=bind,src={input_path},dst=/ot-lab/input.parquet,readonly",
@@ -116,16 +116,16 @@ def run_docker_submission(image: str, run_dir: Path, output: Path, timeout_s: in
             image,
         ]
         try:
-            _run_bounded(args, cwd=sandbox, env={**os.environ, "OT_LAB_OUTPUT": str(output_path)}, timeout_s=timeout_s, max_output_bytes=max_output_bytes, monitored_output=mounted_output)
+            _run_bounded(args, cwd=sandbox, env={**os.environ, "OT_LAB_OUTPUT": str(mounted_output)}, timeout_s=timeout_s, max_output_bytes=max_output_bytes, monitored_output=mounted_output)
         finally:
             if cid_path.is_file():
                 container_id = cid_path.read_text(encoding="utf-8").strip()
                 if container_id:
                     subprocess.run([docker, "rm", "--force", container_id], timeout=30, check=False, capture_output=True)
+        output.parent.mkdir(parents=True, exist_ok=True)
         if not mounted_output.is_file():
             raise FileNotFoundError("container did not write the mounted /ot-lab/output.jsonl file")
         if mounted_output.stat().st_size > max_output_bytes:
             raise ValueError(f"submission output exceeds {max_output_bytes} bytes")
-        output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(mounted_output.read_bytes())
     return output
