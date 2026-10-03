@@ -18,7 +18,7 @@ jobs:
         with:
           enable-cache: true
       - name: Install Python 3.12 and dependencies
-        run: uv sync --python 3.12 --extra dev
+        run: uv sync --python 3.12 --extra dev --group lint
       - name: Lint
         run: uv run ruff check src tests
       - name: Test
