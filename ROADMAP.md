@@ -22,7 +22,7 @@ OT Irregularity Lab v0.2.0 delivers a randomized suite and one public 1,000-run 
 ## Optional plant and protocol adapters
 
 - [x] Add optional OPC UA read-only telemetry replay (`opcua` extra), with one Object per asset, Variables and engineering metadata per tag, a loopback default, and client/server conformance coverage. Ground truth stays outside the adapter.
-- [ ] Add Modbus/TCP or OpenPLC adapter and extend protocol conformance coverage. The OPC UA endpoint currently uses None security and is intended for isolated synthetic testing only.
+- [x] Add a PyModbus 3.x optional Modbus/TCP replay adapter. It maps sorted asset/tag IDs to read-only IEEE-754 FLOAT32 input registers, defaults to loopback, and has client/server integration coverage; it does not emulate a PLC control program. OPC UA and Modbus endpoints lack transport security and are intended for isolated synthetic testing only.
 
 ## Release and governance
 

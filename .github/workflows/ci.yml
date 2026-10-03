@@ -15,14 +15,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        extra: [core, opcua]
+        extra: [core, opcua, modbus]
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
       - name: Install Python 3.12 and dependencies
-        run: uv sync --python 3.12 --extra dev ${{ matrix.extra == 'opcua' && '--extra opcua' || '' }} --group lint
+        run: uv sync --python 3.12 --extra dev ${{ matrix.extra != 'core' && format('--extra {0}', matrix.extra) || '' }} --group lint
       - name: Lint
         run: uv run ruff check src tests
       - name: Test

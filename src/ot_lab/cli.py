@@ -84,6 +84,13 @@ def main() -> None:
     opcua_cmd.add_argument("--endpoint", default="opc.tcp://127.0.0.1:4840/ot-lab/")
     opcua_cmd.add_argument("--fast", action="store_true", help="replay immediately without matching timestamp intervals")
     opcua_cmd.add_argument("--serve", action="store_true", help="keep the server running with the final values after replay")
+    modbus_cmd = commands.add_parser("modbus-replay", help="serve canonical telemetry over optional Modbus/TCP (loopback by default)")
+    modbus_cmd.add_argument("--telemetry", type=Path, required=True)
+    modbus_cmd.add_argument("--host", default="127.0.0.1")
+    modbus_cmd.add_argument("--port", type=int, default=5020)
+    modbus_cmd.add_argument("--device-id", type=int, default=1)
+    modbus_cmd.add_argument("--fast", action="store_true", help="replay immediately without matching timestamp intervals")
+    modbus_cmd.add_argument("--serve", action="store_true", help="keep the server running with the final values after replay")
     compare_cmd = commands.add_parser("compare", help="evaluate multiple prediction JSONL files")
     compare_cmd.add_argument("--run", type=Path, required=True)
     compare_cmd.add_argument("--predictions", type=Path, nargs="+", required=True)
@@ -133,6 +140,12 @@ def main() -> None:
         from .protocols.opcua import replay_opcua
 
         asyncio.run(replay_opcua(args.telemetry, args.endpoint, realtime=not args.fast, stay_open=args.serve))
+    elif args.command == "modbus-replay":
+        import asyncio
+
+        from .protocols.modbus import replay_modbus
+
+        asyncio.run(replay_modbus(args.telemetry, args.host, args.port, args.device_id, realtime=not args.fast, stay_open=args.serve))
     elif args.command == "compare":
         rows = []
         for prediction in args.predictions:

@@ -34,7 +34,7 @@ Run a fresh Docker challenge with a separate hidden-case distribution: `uv run o
 
 Generate large train/validation/test datasets with deterministic process workers: `uv run ot-lab dataset create --suite suites/normal-operation-v0.1.yaml --runs 1000 --seed 424242 --workers 4 --output datasets/normal-v1`. The default worker count is one; see [BENCHMARK.md](BENCHMARK.md) for measured throughput and its limits.
 
-Optional protocol replay adapters are documented in [PROTOCOLS.md](PROTOCOLS.md). The core generator does not require protocol emulators.
+Optional OPC UA and Modbus/TCP replay adapters are documented in [PROTOCOLS.md](PROTOCOLS.md). The core generator does not require protocol emulators.
 
 Current public-source calibration evidence and its limits are recorded in [CALIBRATION.md](CALIBRATION.md); process dynamics remain illustrative until independently calibrated.
 
