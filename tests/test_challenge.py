@@ -134,3 +134,16 @@ def test_challenge_can_use_an_independent_hidden_distribution(tmp_path):
     assert all("observed_start" not in event and "observed_end" not in event for event in truth["events"])
     assert "hidden-ot-challenge" not in json.dumps(metadata) + json.dumps(truth)
     assert telemetry.get_column("asset_id").unique().to_list()
+
+
+def test_normal_operation_suite_generates_only_normal_regime_ground_truth(tmp_path):
+    suite_path = Path("suites/normal-operation-v0.1.yaml")
+    from ot_lab.simulation import batch
+
+    batch(suite_path, 30, tmp_path / "normal", seed=12)
+    manifest = json.loads((tmp_path / "normal" / "dataset_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["class_distribution"] == {"normal": 30, "anomalous": 0}
+    for item in manifest["runs"]:
+        truth = json.loads((tmp_path / "normal" / item["partition"] / item["run_id"] / "ground_truth.json").read_text(encoding="utf-8"))
+        assert not truth["events"]
+        assert truth["operating_regimes"]

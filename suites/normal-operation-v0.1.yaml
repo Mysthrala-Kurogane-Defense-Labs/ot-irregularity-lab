@@ -1,0 +1,41 @@
+suite_id: ot-irregularity-normal-operation
+suite_version: 0.1.0
+description: >-
+  Normal-only process distribution with distinct operating transitions, startup,
+  cooldown, shift changes, sampling jitter and ambient/setpoint variation. No event
+  injection is configured; realized behavior remains synthetic benchmark coverage.
+partitions:
+  train: 0.70
+  validation: 0.15
+  test: 0.15
+scenario:
+  scenario_id: randomized-normal-operation
+  scenario_version: 1.0.0
+  run_id: normal
+  duration_s: 600
+  sampling_interval_ms: 1000
+  ambient_temperature_c: 22
+  assets:
+    - {asset_id: CNC-01, asset_class: cnc}
+generation:
+  anomaly_probability: 0.0
+  vary:
+    duration_s: {min: 300, max: 1800}
+    sampling_interval_ms: {choices: [500, 1000, 2000]}
+    sampling_jitter_ms: {min: 0, max: 50}
+    ambient_temperature_c: {min: 12, max: 35}
+    ambient_temperature_drift_c: {min: -5, max: 5}
+    expose_operating_regime: {choices: [true, false]}
+  asset_profiles:
+    - {profile_id: cnc, weight: 2, assets: [{asset_id: CNC-01, asset_class: cnc}]}
+    - {profile_id: pump, weight: 2, assets: [{asset_id: PUMP-01, asset_class: pump}]}
+    - {profile_id: compressor, weight: 2, assets: [{asset_id: COMPRESSOR-01, asset_class: compressor}]}
+    - {profile_id: conveyor, weight: 2, assets: [{asset_id: CONVEYOR-01, asset_class: conveyor}]}
+    - {profile_id: machining-cell, weight: 1, assets: [{asset_id: CNC-01, asset_class: cnc}, {asset_id: PUMP-01, asset_class: pump}]}
+    - {profile_id: mixed-plant, weight: 1, assets: [{asset_id: CNC-01, asset_class: cnc}, {asset_id: PUMP-01, asset_class: pump}, {asset_id: COMPRESSOR-01, asset_class: compressor}, {asset_id: CONVEYOR-01, asset_class: conveyor}]}
+  regime_profiles:
+    - {profile_id: cold-start-and-shift, weight: 2, shift_pattern: ["OFF", WARMUP, LOW_LOAD, NORMAL_LOAD, HIGH_LOAD, NORMAL_LOAD, COOLDOWN, "OFF"]}
+    - {profile_id: variable-production, weight: 3, shift_pattern: [IDLE, LOW_LOAD, HIGH_LOAD, LOW_LOAD, NORMAL_LOAD]}
+    - {profile_id: steady-heavy-production, weight: 2, shift_pattern: [HIGH_LOAD, HIGH_LOAD, NORMAL_LOAD]}
+    - {profile_id: planned-maintenance, weight: 1, shift_pattern: [NORMAL_LOAD, HIGH_LOAD, MAINTENANCE, IDLE, NORMAL_LOAD]}
+    - {profile_id: stop-and-restart, weight: 1, shift_pattern: [LOW_LOAD, NORMAL_LOAD, "OFF", IDLE, WARMUP, NORMAL_LOAD]}

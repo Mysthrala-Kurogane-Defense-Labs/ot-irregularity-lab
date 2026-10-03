@@ -25,6 +25,10 @@ These datasets differ in plant physics, collection methods, labels, and access t
 
 The default weights are a benchmark coverage choice, not an estimate of real plant incident frequency. A suite manifest reports actual per-partition normal/anomalous runs, event families, asset classes, regimes, seeds, and hashes so every generated release can disclose its realized mix.
 
+## Normal-only and false-positive stress suites
+
+`suites/normal-operation-v0.1.yaml` generates only event-free runs while varying duration, asset composition, ambient temperature/drift, sampling interval/jitter, PLC regime exposure, and shift patterns that include starts, stops, warmup, cooldown, load changes and planned maintenance. `suites/false-positive-stress.yaml` is a smaller fixed mixed-asset scenario for controlled transition stress. These cases are informed by published benchmark design patterns: SWaT separates extended normal operation from attack periods and documents maintenance/reset contexts; Tennessee Eastman reference data uses independent seeds and includes setpoint changes and mode transitions; MetroPT-3 has irregular cadence/gaps and maintenance-linked event metadata. None of those sources defines universal incident or false-positive rates for this simulator.
+
 ## Generate a dataset
 
 ```bash
