@@ -63,3 +63,21 @@ The ZeMA hydraulic rig results above provide an additional independently sourced
 The sources above do not establish this project's thermal time constants, load-transition lag, control-loop settling, vibration baselines, bearing-fault progression, sensor noise distributions or cross-asset failure rates. Keep these as explicit simulator hypotheses and configurable distributions. Do not tune them to improve any detector score. A calibrated profile needs an independently reviewable parameter table with source, unit conversion, operating conditions, uncertainty and license/provenance.
 
 No third-party measurements are included in public dataset releases. The training suite remains synthetic, generated and non-customer data.
+
+## Brownfield CNC vibration reference
+
+The Bosch Research [CNC Machining Dataset](https://github.com/boschresearch/CNC_Machining) includes tri-axial acceleration segments collected at 2 kHz from three brownfield milling machines, across 15 shuffled tool operations and six six-month timeframe labels. Its data directory is CC BY 4.0; the paper is Tnani, Feil, and Diepold (2022), [DOI 10.1016/j.procir.2022.04.022](https://doi.org/10.1016/j.procir.2022.04.022). The repository's README describes manually annotated `good` and `bad` process folders; labels do not identify a mechanical fault or within-segment onset. The HDF5 arrays do not declare an acceleration unit.
+
+Reproduce the aggregate report from a local checkout of the data directory with:
+
+```bash
+uv sync --extra calibration
+uv run ot-lab calibration analyze-bosch-cnc \
+  --input-dir /path/to/CNC_Machining/data \
+  --source-revision d60581d6a3ab6015dcc5488c3d76112bb8e1bcb1 \
+  --output calibration/bosch-cnc-summary.json
+```
+
+The pinned repository snapshot contains 1,702 HDF5 segment files (1,632 `good`, 70 `bad`) across three machines. The analyzer records the aggregate SHA-256 manifest of source paths and file hashes, then emits per-machine, per-operation, per-label and per-timeframe sample counts, segment durations, and axis/resultant RMS quantiles. No source arrays or segment-level RMS values are written. Because the unit is absent and these are acceleration rather than velocity measurements, the resulting values cannot calibrate `spindle_vibration_mm_s`; no conversion, physical limit, fault prior or cause-specific gain is inferred. Label imbalance and differences among operations also mean that source class ratios are not failure prevalence.
+
+This source is useful for preserving machine-, operation- and timeframe-conditioned variability in future vibration scenario design. It does not identify spindle load, RPM, power, temperature, controller regimes or causal links; the generic CNC process equations remain illustrative. The analyzer and committed aggregates are documented in the [2026-10-04 Bosch CNC analysis record](docs/workflows/synthetic-dataset-generation/runs/2026-10-04-bosch-cnc-analysis.md).
