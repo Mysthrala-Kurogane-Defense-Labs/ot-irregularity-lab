@@ -1,6 +1,7 @@
 import io
 import json
 import subprocess
+import sys
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from pathlib import Path
@@ -1015,6 +1016,44 @@ def test_run_submission_exposes_only_temporary_input(tmp_path):
     cmd = "python -c \"import pathlib,os; pathlib.Path(os.environ['OT_LAB_OUTPUT']).write_text('{}\\n')\""
     result = run_submission(cmd, run_dir, out)
     assert result.read_text() == "{}\n"
+
+
+def test_independent_external_commands_run_and_compare_without_importing_lab(tmp_path, monkeypatch):
+    from ot_lab.cli import main
+
+    scenario = fixture_scenario(anomaly={
+        "type": "sensor_bias", "asset": "ASSET-01", "start": 10,
+        "duration": 5, "parameters": {"signal": "spindle_power_kw", "bias": 1.0},
+    })
+    run_dir = tmp_path / "run"
+    write_run(scenario, 91, run_dir)
+    prediction_paths = []
+    for name, score in (("quiet-baseline", 0.1), ("always-alert", 0.9)):
+        script = tmp_path / f"{name}.py"
+        script.write_text(f'''import json, sys
+from pathlib import Path
+assert Path(sys.argv[1]).read_bytes()[:4] == b"PAR1"
+score = {score}
+with open(sys.argv[2], "w", encoding="utf-8") as output:
+    output.write(json.dumps({{"asset_id": "ASSET-01", "window_start": "{EPOCH.isoformat()}", "window_end": "{(EPOCH + timedelta(seconds=30)).isoformat()}", "irregularity_score": score}}) + "\\n")
+''', encoding="utf-8")
+        output = tmp_path / f"{name}.jsonl"
+        command = f'"{sys.executable}" "{script}" {{input}} {{output}}'
+        run_submission(command, run_dir, output)
+        prediction_paths.append(output)
+
+    comparison_dir = tmp_path / "comparison"
+    monkeypatch.setattr(sys, "argv", [
+        "ot-lab", "compare", "--run", str(run_dir), "--predictions",
+        *(str(path) for path in prediction_paths), "--output", str(comparison_dir),
+    ])
+    main()
+    rows = json.loads((comparison_dir / "comparison.json").read_text(encoding="utf-8"))
+    assert [row["model"] for row in rows] == ["quiet-baseline", "always-alert"]
+    assert rows[0]["event_detection_rate"] == 0
+    assert rows[1]["event_detection_rate"] == 1
+    assert rows[1]["window_precision"] == pytest.approx(4 / 30)
+    assert all(path.exists() for path in prediction_paths)
 
 
 def test_run_submission_enforces_prediction_size_limit(tmp_path):
