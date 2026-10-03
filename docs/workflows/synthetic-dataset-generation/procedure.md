@@ -14,6 +14,7 @@ Generate a reproducible, model-agnostic synthetic dataset from a versioned suite
 6. Replay at least one normal run and one event-bearing run from different partitions; compare logical Parquet rows and ground-truth JSON.
 7. Keep model inputs to `train.parquet`, `validation.parquet`, or `test.parquet`. Do not provide per-run `ground_truth.json`, scenario, or metadata to an evaluated model.
 8. Record the suite, simulator, schema versions, command, seed, dataset path, hashes, results, and limitations in a dated run record.
+9. For a public partition release, run `ot-lab dataset package` with an explicit dataset version and license notice. Confirm the source hashes, selected partition ZIPs, embedded seed-free manifests, and final archive hashes. The original local generation manifest includes run seeds for replay; publish the package release manifest instead of placing that file in an independently shared partition archive.
 
 Anomaly severity 0 suppresses injection and severity 1 applies configured magnitudes or rates. Intermediate severity scales continuous effects and seeded dropout/quality probabilities. Outcomes remain discrete per observation; severity changes their probability.
 

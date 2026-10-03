@@ -1,0 +1,146 @@
+"""Deterministic, independently publishable dataset partition artifacts."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import tempfile
+import zipfile
+from pathlib import Path
+from typing import Any
+
+PARTITIONS = ("train", "validation", "test")
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _zip_bytes(archive: zipfile.ZipFile, name: str, content: bytes) -> None:
+    entry = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+    entry.compress_type = zipfile.ZIP_DEFLATED
+    entry.external_attr = 0o100644 << 16
+    entry.create_system = 3
+    archive.writestr(entry, content, compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
+
+
+def _zip_file(archive: zipfile.ZipFile, name: str, source: Path) -> None:
+    entry = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+    entry.compress_type = zipfile.ZIP_DEFLATED
+    entry.external_attr = 0o100644 << 16
+    entry.create_system = 3
+    entry.file_size = source.stat().st_size
+    with archive.open(entry, "w", force_zip64=True) as target, source.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            target.write(block)
+
+
+def package_dataset(
+    dataset: Path,
+    dataset_version: str,
+    output: Path,
+    license_file: Path,
+    partitions: list[str] | None = None,
+) -> Path:
+    """Build deterministic per-partition ZIPs with seed-free release manifests."""
+    if not dataset_version.strip():
+        raise ValueError("dataset_version must not be empty")
+    selected = list(PARTITIONS) if partitions is None else partitions
+    if not selected or len(selected) != len(set(selected)) or any(item not in PARTITIONS for item in selected):
+        raise ValueError(f"partitions must be unique values from {', '.join(PARTITIONS)}")
+    if not dataset.is_dir():
+        raise FileNotFoundError(dataset)
+    if output.exists():
+        raise FileExistsError(f"release output path must not already exist: {output}")
+    if not license_file.is_file():
+        raise FileNotFoundError(license_file)
+    manifest_path = dataset / "dataset_manifest.json"
+    if not manifest_path.is_file():
+        raise FileNotFoundError(manifest_path)
+    source_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if (
+        source_manifest.get("generation_complete") is not True
+        or source_manifest.get("synthetic") is not True
+        or source_manifest.get("generated") is not True
+        or source_manifest.get("customer_data") is not False
+        or not source_manifest.get("data_license")
+    ):
+        raise ValueError("only completed, licensed synthetic non-customer datasets can be packaged")
+    if any(name not in PARTITIONS for name in source_manifest.get("partition_files", {})):
+        raise ValueError("dataset manifest contains a non-public partition")
+    license_text = license_file.read_text(encoding="utf-8").strip()
+    if not license_text:
+        raise ValueError("license file must not be empty")
+    source_hash = _sha256(manifest_path)
+    license_bytes = license_file.read_bytes()
+    artifacts: dict[str, dict[str, Any]] = {}
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f".{output.name}.package-", dir=output.parent) as temporary:
+        stage = Path(temporary)
+        for partition in selected:
+            details = source_manifest.get("partition_files", {}).get(partition, {})
+            source_name = details.get("path")
+            if not source_name:
+                raise ValueError(f"dataset has no Parquet artifact for partition {partition}")
+            source = dataset / source_name
+            if not source.is_file() or _sha256(source) != details.get("sha256"):
+                raise ValueError(f"partition artifact hash mismatch: {source}")
+            content_hash = _sha256(source)
+            partition_meta = {
+                "dataset_id": source_manifest["dataset_id"],
+                "dataset_version": dataset_version,
+                "source_dataset_manifest_sha256": source_hash,
+                "simulator_version": source_manifest["simulator_version"],
+                "schema_version": source_manifest["schema_version"],
+                "suite_id": source_manifest["suite_id"],
+                "suite_version": source_manifest["suite_version"],
+                "data_license": source_manifest.get("data_license"),
+                "partition": partition,
+                "run_count": source_manifest.get("partition_counts", {}).get(partition, 0),
+                "observation_count": details.get("observation_count", 0),
+                "class_distribution": source_manifest.get("class_distribution_by_partition", {}).get(partition, {}),
+                "artifact": {"path": f"{partition}.parquet", "sha256": content_hash, "bytes": source.stat().st_size},
+                "contains_ground_truth": False,
+                "contains_run_seeds": False,
+                "synthetic": True,
+                "generated": True,
+                "customer_data": False,
+            }
+            archive_path = stage / f"{partition}.zip"
+            with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+                _zip_file(archive, f"{partition}.parquet", source)
+                _zip_bytes(archive, "DATASET_LICENSE.txt", license_bytes)
+                _zip_bytes(archive, "release_manifest.json", (json.dumps(partition_meta, indent=2, sort_keys=True) + "\n").encode())
+            artifacts[partition] = {
+                "path": archive_path.name,
+                "sha256": _sha256(archive_path),
+                "bytes": archive_path.stat().st_size,
+                "observation_count": details.get("observation_count", 0),
+                "run_count": source_manifest.get("partition_counts", {}).get(partition, 0),
+            }
+        release_manifest = {
+            "release_manifest_version": "1.0.0",
+            "dataset_id": source_manifest["dataset_id"],
+            "dataset_version": dataset_version,
+            "source_dataset_manifest_sha256": source_hash,
+            "simulator_version": source_manifest["simulator_version"],
+            "schema_version": source_manifest["schema_version"],
+            "suite_id": source_manifest["suite_id"],
+            "suite_version": source_manifest["suite_version"],
+            "data_license": source_manifest.get("data_license"),
+            "license_file": "DATASET_LICENSE.txt",
+            "partitions": artifacts,
+            "synthetic": True,
+            "generated": True,
+            "customer_data": False,
+            "contains_run_seeds": False,
+            "contains_ground_truth": False,
+        }
+        (stage / "release_manifest.json").write_text(json.dumps(release_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        (stage / "DATASET_LICENSE.txt").write_bytes(license_bytes)
+        stage.replace(output)
+    return output

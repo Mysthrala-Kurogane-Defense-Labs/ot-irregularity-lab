@@ -8,6 +8,7 @@ from pathlib import Path
 
 from . import __version__
 from .calibration import write_metropt_analysis
+from .datasets import package_dataset
 from .evaluation import evaluate
 from .simulation import batch, generate_challenge, read_scenario, replay, write_run
 from .submission import DEFAULT_MAX_OUTPUT_BYTES, run_docker_submission, run_submission
@@ -41,6 +42,12 @@ def main() -> None:
     create_cmd.add_argument("--output", type=Path, required=True)
     create_cmd.add_argument("--resume", action="store_true", help="keep per-run checkpoints and resume after interruption")
     create_cmd.add_argument("--workers", type=int, default=1, help="parallel run-generation processes (default: 1)")
+    package_cmd = dataset_subcommands.add_parser("package", help="create deterministic, separate ZIP artifacts for public partitions")
+    package_cmd.add_argument("--dataset", type=Path, required=True)
+    package_cmd.add_argument("--dataset-version", required=True, help="public dataset release version, for example 0.4.0")
+    package_cmd.add_argument("--license-file", type=Path, required=True, help="full data license notice to include with each artifact")
+    package_cmd.add_argument("--partition", dest="partitions", nargs="+", choices=("train", "validation", "test"))
+    package_cmd.add_argument("--output", type=Path, required=True, help="new directory for per-partition ZIPs and release manifest")
     calibration_cmd = commands.add_parser("calibration", help="analyze public reference data locally; source records are not copied")
     calibration_sub = calibration_cmd.add_subparsers(dest="calibration_command", required=True)
     metropt_cmd = calibration_sub.add_parser("analyze-metropt", help="summarize MetroPT-3 compressor modes and cadence")
@@ -90,11 +97,13 @@ def main() -> None:
         print(json.dumps(metadata, indent=2))
     elif args.command == "replay":
         print(replay(args.run_dir, args.output))
-    elif args.command in {"batch", "dataset"}:
+    elif args.command in {"batch", "dataset"} and (args.command == "batch" or args.dataset_command == "create"):
         if args.runs <= 0:
             parser.error("--runs must be positive")
         batch(args.suite, args.runs, args.output, args.seed, resume=getattr(args, "resume", False), workers=args.workers)
         print(args.output / "dataset_manifest.json")
+    elif args.command == "dataset" and args.dataset_command == "package":
+        print(package_dataset(args.dataset, args.dataset_version, args.output, args.license_file, args.partitions))
     elif args.command == "calibration":
         print(write_metropt_analysis(args.input, args.output))
     elif args.command == "benchmark":
