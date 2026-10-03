@@ -30,3 +30,17 @@ anomalies:
 ```
 
 The initial implementation applies deterministic effects for each defined type; cadence/rate loss is configured by numeric parameters. Expand scenario coverage with tests and document the affected signals for each asset class.
+
+For `missing_telemetry`, use `loss_pct` with optional `signal`, `signals`, or a deterministic tag-selection policy. `tag_selection` accepts `all` (default), `single`, or `multiple`; `tag_count` sets the number selected for `multiple`. Selection is stable for the same seed/event/sample. `single_signal_loss` accepts `signal` or `signals`; otherwise it selects one tag. Unknown tags and impossible counts fail validation during simulation. For a full asset communication outage, use `asset_communication_loss`.
+
+```yaml
+anomalies:
+  - type: missing_telemetry
+    asset: PUMP-01
+    start: 120
+    duration: 30
+    parameters:
+      loss_pct: 25
+      tag_selection: multiple
+      tag_count: 3
+```

@@ -9,7 +9,7 @@ from pathlib import Path
 from . import __version__
 from .evaluation import evaluate
 from .simulation import batch, generate_challenge, read_scenario, replay, write_run
-from .submission import run_docker_submission, run_submission
+from .submission import DEFAULT_MAX_OUTPUT_BYTES, run_docker_submission, run_submission
 
 
 def main() -> None:
@@ -44,21 +44,24 @@ def main() -> None:
     benchmark_cmd.add_argument("--output", type=Path, required=True)
     benchmark_cmd.add_argument("--threshold", type=float, default=0.5)
     benchmark_cmd.add_argument("--overlap", type=float, default=0.1)
-    run_cmd = commands.add_parser("run-model", help="run an external command against telemetry only")
+    run_cmd = commands.add_parser("run-model", help="run a trusted local command against telemetry only; this is not a security sandbox")
     run_cmd.add_argument("--run", type=Path, required=True)
     run_cmd.add_argument("--command", dest="model_command", required=True, help='executable and arguments; use "{input}" and "{output}" placeholders')
     run_cmd.add_argument("--output", type=Path, required=True)
     run_cmd.add_argument("--timeout", type=int, default=300)
+    run_cmd.add_argument("--max-output-bytes", type=int, default=DEFAULT_MAX_OUTPUT_BYTES)
     docker_cmd = commands.add_parser("run-container", help="run a Docker submission without network or ground truth mounts")
     docker_cmd.add_argument("--run", type=Path, required=True)
     docker_cmd.add_argument("--image", required=True)
     docker_cmd.add_argument("--output", type=Path, required=True)
     docker_cmd.add_argument("--timeout", type=int, default=300)
+    docker_cmd.add_argument("--max-output-bytes", type=int, default=DEFAULT_MAX_OUTPUT_BYTES)
     challenge_cmd = commands.add_parser("challenge", help="generate and score a fresh hidden-seed challenge case")
     challenge_cmd.add_argument("--suite", type=Path, required=True)
     challenge_cmd.add_argument("--image", required=True)
     challenge_cmd.add_argument("--output", type=Path, required=True)
     challenge_cmd.add_argument("--timeout", type=int, default=300)
+    challenge_cmd.add_argument("--max-output-bytes", type=int, default=DEFAULT_MAX_OUTPUT_BYTES)
     compare_cmd = commands.add_parser("compare", help="evaluate multiple prediction JSONL files")
     compare_cmd.add_argument("--run", type=Path, required=True)
     compare_cmd.add_argument("--predictions", type=Path, nargs="+", required=True)
@@ -82,16 +85,16 @@ def main() -> None:
         result = evaluate(args.run / "ground_truth.json", args.predictions, args.output, args.threshold, args.overlap, args.run / "telemetry.parquet", args.run / "run_metadata.json")
         print(json.dumps({key: value for key, value in result.items() if key != "events"}, indent=2))
     elif args.command == "run-model":
-        print(run_submission(args.model_command, args.run, args.output, args.timeout))
+        print(run_submission(args.model_command, args.run, args.output, args.timeout, args.max_output_bytes))
     elif args.command == "run-container":
-        print(run_docker_submission(args.image, args.run, args.output, args.timeout))
+        print(run_docker_submission(args.image, args.run, args.output, args.timeout, args.max_output_bytes))
     elif args.command == "challenge":
         import tempfile
         args.output.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="ot-lab-challenge-") as temp:
             case_dir, truth_path = generate_challenge(args.suite, Path(temp))
             predictions = Path(temp) / "predictions.jsonl"
-            run_docker_submission(args.image, case_dir, predictions, args.timeout)
+            run_docker_submission(args.image, case_dir, predictions, args.timeout, args.max_output_bytes)
             result_dir = Path(temp) / "result"
             result = evaluate(truth_path, predictions, result_dir, telemetry_path=case_dir / "telemetry.parquet", metadata_path=case_dir / "run_metadata.json")
             # Persist only scored output; temporary telemetry, predictions, truth and seed are discarded.

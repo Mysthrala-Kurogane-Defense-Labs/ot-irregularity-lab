@@ -7,11 +7,62 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import threading
+import time
 from pathlib import Path
 
+DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024 * 1024
+DEFAULT_MAX_LOG_BYTES = 1024 * 1024
 
-def run_submission(command: str, run_dir: Path, output: Path, timeout_s: int = 300) -> Path:
+
+def _validate_limits(timeout_s: int, max_output_bytes: int) -> None:
+    if timeout_s <= 0:
+        raise ValueError("timeout_s must be positive")
+    if max_output_bytes <= 0:
+        raise ValueError("max_output_bytes must be positive")
+
+
+def _run_bounded(
+    argv: list[str], *, cwd: Path, env: dict[str, str], timeout_s: int,
+    max_output_bytes: int, monitored_output: Path,
+) -> None:
+    """Run while bounding output-file size, wall time, and retained process logs."""
+    started = time.monotonic()
+    logs: dict[str, bytearray] = {"stdout": bytearray(), "stderr": bytearray()}
+    with subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as process:
+        def drain(name: str, stream) -> None:
+            while data := stream.read(65536):
+                remaining = DEFAULT_MAX_LOG_BYTES - len(logs[name])
+                if remaining > 0:
+                    logs[name].extend(data[:remaining])
+
+        drainers = [threading.Thread(target=drain, args=(name, stream), daemon=True) for name, stream in (("stdout", process.stdout), ("stderr", process.stderr))]
+        for thread in drainers:
+            thread.start()
+        try:
+            while process.poll() is None:
+                if time.monotonic() - started > timeout_s:
+                    process.kill()
+                    raise TimeoutError(f"submission exceeded timeout of {timeout_s} seconds")
+                if monitored_output.exists() and monitored_output.stat().st_size > max_output_bytes:
+                    process.kill()
+                    raise ValueError(f"submission output exceeds {max_output_bytes} bytes")
+                time.sleep(0.02)
+            return_code = process.wait()
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            for thread in drainers:
+                thread.join(timeout=1)
+        if return_code:
+            detail = logs["stderr"].decode("utf-8", errors="replace")
+            raise RuntimeError(f"submission exited {return_code}: {detail[-2000:]}")
+
+
+def run_submission(command: str, run_dir: Path, output: Path, timeout_s: int = 300, max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES) -> Path:
     """Run a local executable; copy telemetry into a temporary input path and expose no truth path."""
+    _validate_limits(timeout_s, max_output_bytes)
     telemetry = run_dir / "telemetry.parquet"
     if not telemetry.is_file():
         raise FileNotFoundError(telemetry)
@@ -26,17 +77,18 @@ def run_submission(command: str, run_dir: Path, output: Path, timeout_s: int = 3
             "PATH": os.environ.get("PATH", ""), "TEMP": str(sandbox), "TMP": str(sandbox),
             "OT_LAB_INPUT": str(input_path), "OT_LAB_OUTPUT": str(predictions_path),
         }
-        process = subprocess.run(argv, cwd=sandbox, env=env, timeout=timeout_s, check=False, capture_output=True, text=True)
-        if process.returncode:
-            raise RuntimeError(f"model command exited {process.returncode}: {process.stderr[-2000:]}")
+        _run_bounded(argv, cwd=sandbox, env=env, timeout_s=timeout_s, max_output_bytes=max_output_bytes, monitored_output=predictions_path)
         if not predictions_path.is_file():
             raise FileNotFoundError("model command did not create {output}")
+        if predictions_path.stat().st_size > max_output_bytes:
+            raise ValueError(f"submission output exceeds {max_output_bytes} bytes")
         output.write_bytes(predictions_path.read_bytes())
     return output
 
 
-def run_docker_submission(image: str, run_dir: Path, output: Path, timeout_s: int = 300) -> Path:
+def run_docker_submission(image: str, run_dir: Path, output: Path, timeout_s: int = 300, max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES) -> Path:
     """Execute an image without network, with only telemetry mounted read-only and output writable."""
+    _validate_limits(timeout_s, max_output_bytes)
     docker = shutil.which("docker")
     if docker is None:
         raise RuntimeError("Docker CLI is not installed")
@@ -63,10 +115,10 @@ def run_docker_submission(image: str, run_dir: Path, output: Path, timeout_s: in
             "--env", "OT_LAB_INPUT=/ot-lab/input.parquet", "--env", "OT_LAB_OUTPUT=/ot-lab/out/output.jsonl",
             image,
         ]
-        result = subprocess.run(args, timeout=timeout_s, check=False, capture_output=True, text=True)
-        if result.returncode:
-            raise RuntimeError(f"container exited {result.returncode}: {result.stderr[-2000:]}")
+        _run_bounded(args, cwd=sandbox, env={**os.environ, "OT_LAB_OUTPUT": str(output_path)}, timeout_s=timeout_s, max_output_bytes=max_output_bytes, monitored_output=output_path)
         if not output_path.is_file():
             raise FileNotFoundError("container did not create /ot-lab/out/output.jsonl")
+        if output_path.stat().st_size > max_output_bytes:
+            raise ValueError(f"submission output exceeds {max_output_bytes} bytes")
         output.write_bytes(output_path.read_bytes())
     return output

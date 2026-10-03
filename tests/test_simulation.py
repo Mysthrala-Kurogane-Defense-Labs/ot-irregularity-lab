@@ -1,3 +1,4 @@
+import io
 import json
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
@@ -483,6 +484,33 @@ def test_missing_telemetry_masks_vary_by_run_seed_and_reproduce_with_same_seed()
     assert first_keys != second_keys
 
 
+@pytest.mark.parametrize(("selection", "count"), [("single", 1), ("multiple", 3), ("all", 7)])
+def test_missing_telemetry_supports_configurable_tag_selection(selection, count):
+    scenario = Scenario.model_validate({**fixture_scenario().model_dump(), "sampling_jitter_ms": 0, "anomalies": [{
+        "type": "missing_telemetry", "asset": "ASSET-01", "start": 5,
+        "duration": 5, "severity": 1.0,
+        "parameters": {"loss_pct": 100, "tag_selection": selection, "tag_count": count},
+    }]})
+    telemetry, truth, _ = simulate(scenario, 88)
+    selected = truth["events"][0]["affected_signals"]
+    assert len(selected) == count
+    remaining = telemetry.filter(
+        (pl.col("timestamp") >= pl.datetime(2025, 1, 1, 0, 0, 6, time_zone="UTC")) &
+        (pl.col("timestamp") < pl.datetime(2025, 1, 1, 0, 0, 10, time_zone="UTC"))
+    )
+    assert not set(selected) & set(remaining.get_column("tag_id").unique().to_list())
+
+
+def test_loss_selection_rejects_unknown_and_impossible_tag_counts():
+    for parameters in ({"signal": "not_a_tag"}, {"tag_selection": "multiple", "tag_count": 99}):
+        scenario = Scenario.model_validate({**fixture_scenario().model_dump(), "anomalies": [{
+            "type": "missing_telemetry", "asset": "ASSET-01", "start": 5,
+            "duration": 5, "parameters": parameters,
+        }]})
+        with pytest.raises(ValueError, match="unknown signals|tag_count"):
+            simulate(scenario, 2)
+
+
 @pytest.mark.parametrize("loss_pct", [5, 10, 25, 50, 100])
 def test_missing_telemetry_empirical_rate_over_independent_seeds(loss_pct):
     scenario = Scenario.model_validate({**fixture_scenario().model_dump(), "sampling_jitter_ms": 0, "anomalies": [{
@@ -719,25 +747,55 @@ def test_run_submission_exposes_only_temporary_input(tmp_path):
     assert result.read_text() == "{}\n"
 
 
+def test_run_submission_enforces_prediction_size_limit(tmp_path):
+    run_dir = tmp_path / "run"
+    write_run(fixture_scenario(), 2, run_dir)
+    out = tmp_path / "predictions.jsonl"
+    command = "python -c \"import os,pathlib; pathlib.Path(os.environ['OT_LAB_OUTPUT']).write_text('x'*10000)\""
+    with pytest.raises(ValueError, match="exceeds 100 bytes"):
+        run_submission(command, run_dir, out, max_output_bytes=100)
+
+
+def test_run_submission_enforces_timeout(tmp_path):
+    run_dir = tmp_path / "run"
+    write_run(fixture_scenario(), 2, run_dir)
+    command = "python -c \"import time; time.sleep(10)\""
+    with pytest.raises(TimeoutError, match="timeout of 1 seconds"):
+        run_submission(command, run_dir, tmp_path / "predictions.jsonl", timeout_s=1)
+
+
 def test_docker_submission_passes_only_minimal_environment(tmp_path, monkeypatch):
     run_dir = tmp_path / "run"
     write_run(fixture_scenario(), 2, run_dir)
     captured = {}
 
     class Completed:
-        returncode = 0
-        stderr = ""
+        def __init__(self, args, **_kwargs):
+            self.returncode = 0
+            self.stdout = io.BytesIO()
+            self.stderr = io.BytesIO()
+            captured["args"] = args
+            mount_arg = args[args.index("--mount", args.index("--mount") + 1) + 1]
+            host_dir = Path(mount_arg.split("src=", 1)[1].split(",dst=", 1)[0])
+            (host_dir / "output.jsonl").write_text("{}\n")
 
-    def fake_run(args, **kwargs):
-        captured["args"] = args
-        # The test emulates the program writing inside the isolated output mount.
-        mount_arg = args[args.index("--mount", args.index("--mount") + 1) + 1]
-        host_dir = Path(mount_arg.split("src=", 1)[1].split(",dst=", 1)[0])
-        (host_dir / "output.jsonl").write_text("{}\n")
-        return Completed()
+        def poll(self):
+            return self.returncode
+
+        def wait(self):
+            return self.returncode
+
+        def kill(self):
+            self.returncode = -9
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
 
     monkeypatch.setattr("ot_lab.submission.shutil.which", lambda _: "docker")
-    monkeypatch.setattr("ot_lab.submission.subprocess.run", fake_run)
+    monkeypatch.setattr("ot_lab.submission.subprocess.Popen", Completed)
     out = tmp_path / "predictions.jsonl"
     run_docker_submission("sample:latest", run_dir, out)
     command = captured["args"]
@@ -750,3 +808,29 @@ def test_docker_submission_passes_only_minimal_environment(tmp_path, monkeypatch
     assert len(mounts) == 2
     assert all("ground_truth" not in mount for mount in mounts)
     assert "GH_TOKEN" not in [command[i + 1] for i, item in enumerate(command[:-1]) if item == "--env"]
+
+
+def test_docker_submission_enforces_prediction_size_limit(tmp_path, monkeypatch):
+    run_dir = tmp_path / "run"
+    write_run(fixture_scenario(), 2, run_dir)
+
+    class Completed:
+        returncode = 0
+        stdout = io.BytesIO()
+        stderr = io.BytesIO()
+
+        def __init__(self, args, **_kwargs):
+            mount_arg = args[args.index("--mount", args.index("--mount") + 1) + 1]
+            host_dir = Path(mount_arg.split("src=", 1)[1].split(",dst=", 1)[0])
+            (host_dir / "output.jsonl").write_text("x" * 101)
+
+        def poll(self): return self.returncode
+        def wait(self): return self.returncode
+        def kill(self): self.returncode = -9
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+
+    monkeypatch.setattr("ot_lab.submission.shutil.which", lambda _: "docker")
+    monkeypatch.setattr("ot_lab.submission.subprocess.Popen", Completed)
+    with pytest.raises(ValueError, match="exceeds 100 bytes"):
+        run_docker_submission("sample:latest", run_dir, tmp_path / "predictions.jsonl", max_output_bytes=100)

@@ -27,7 +27,7 @@ class Anomaly(BaseModel):
     asset: str
     start: float = Field(ge=0, description="Start offset in seconds")
     duration: float = Field(gt=0, description="Duration in seconds")
-    parameters: dict[str, float | str | bool] = Field(default_factory=dict)
+    parameters: dict[str, float | str | bool | list[str]] = Field(default_factory=dict)
     severity: float = Field(default=0.4, ge=0, le=1)
     difficulty: Literal["easy", "medium", "hard", "very_hard"] | None = None
     resolved_difficulty: dict[str, float | str] | None = None
@@ -90,4 +90,4 @@ class GroundTruthEvent(BaseModel):
     end: datetime
     affected_signals: list[str]
     severity: float
-    parameters: dict[str, float | str | bool] = Field(default_factory=dict)
+    parameters: dict[str, float | str | bool | list[str]] = Field(default_factory=dict)

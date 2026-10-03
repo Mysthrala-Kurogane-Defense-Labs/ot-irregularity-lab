@@ -273,7 +273,7 @@ def _affect(
         states["__sensor_stuck"] = state
         quality = "UNCERTAIN"
     elif kind == "single_signal_loss":
-        names = [str(p["signal"])] if "signal" in p else [next(iter(signals))]
+        names = _select_loss_signals(signals, p, run_seed, event, sample_index, force_single=True)
         if any(name not in signals for name in names):
             raise ValueError("single_signal_loss references a signal absent from the target asset")
         for name in names:
@@ -287,11 +287,13 @@ def _affect(
         if not 0 <= loss_pct <= 100:
             raise ValueError("loss_pct must be within 0..100")
         loss_pct *= severity_scale
+        candidates = _select_loss_signals(signals, p, run_seed, event, sample_index)
         if loss_pct >= 100:
-            affected.update(signals)
-            signals.clear()
+            affected.update(candidates)
+            for name in candidates:
+                signals.pop(name, None)
         else:
-            for name in list(signals):
+            for name in candidates:
                 # Stable hashed selection per timestamp, no hidden state or extra RNG consumption.
                 token = f"{run_seed}|{event.asset}|{name}|{sample_index}|{event.start}".encode()
                 draw = int(hashlib.sha256(token).hexdigest()[:8], 16) / 0x100000000
@@ -339,6 +341,40 @@ def _affect(
             signals[name] *= 1 - (1 - float(p.get("load_multiplier", 0.1))) * severity_scale
             affected.add(name)
     return signals, affected, quality
+
+
+def _select_loss_signals(
+    signals: dict[str, float], parameters: dict[str, Any], run_seed: int, event: Any,
+    sample_index: int, force_single: bool = False,
+) -> list[str]:
+    """Resolve an explicit tag list or a deterministic tag-selection policy."""
+    available = list(signals)
+    if "signal" in parameters:
+        names = [str(parameters["signal"])]
+    elif "signals" in parameters:
+        raw = parameters["signals"]
+        if not isinstance(raw, list) or any(not isinstance(name, str) for name in raw):
+            raise ValueError("signals must be a list of tag names")
+        names = list(dict.fromkeys(raw))
+    else:
+        mode = "single" if force_single else str(parameters.get("tag_selection", "all"))
+        if mode not in {"all", "single", "multiple"}:
+            raise ValueError("tag_selection must be all, single, or multiple")
+        if mode == "all":
+            names = available
+        else:
+            count = 1 if mode == "single" or force_single else int(parameters.get("tag_count", 2))
+            if count < 1 or count > len(available):
+                raise ValueError("tag_count must be between 1 and the number of available signals")
+            token = f"{run_seed}|{event.asset}|{event.start}|tag-selection".encode()
+            rng = np.random.default_rng(int(hashlib.sha256(token).hexdigest()[:16], 16))
+            names = [available[index] for index in sorted(rng.choice(len(available), size=count, replace=False).tolist())]
+    if not names:
+        raise ValueError("at least one signal must be selected")
+    unknown = set(names) - set(available)
+    if unknown:
+        raise ValueError(f"loss scenario references unknown signals: {', '.join(sorted(unknown))}")
+    return names
 
 
 def simulate(scenario: Scenario, seed: int) -> tuple[pl.DataFrame, dict[str, Any], dict[str, Any]]:
