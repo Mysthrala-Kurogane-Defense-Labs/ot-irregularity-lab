@@ -670,6 +670,29 @@ def test_training_v03_distribution_samples_compressor_air_leaks():
             assert all(a["start"] + a["duration"] <= b["start"] for a, b in pairwise(asset_events))
 
 
+def test_first_randomized_event_uses_its_sampled_start_when_the_slot_is_free():
+    import yaml
+
+    suite = yaml.safe_load(Path("suites/training-v0.3.yaml").read_text(encoding="utf-8"))
+    generation = dict(suite["generation"])
+    template = dict(next(item for item in generation["anomaly_templates"] if item["type"] == "air_leak"))
+    template.update({"start_fraction": {"min": 0.3, "max": 0.3},
+                     "duration_fraction": {"min": 0.1, "max": 0.1},
+                     "severity": {"min": 0.5, "max": 0.5}})
+    generation.update({"anomaly_probability": 1.0, "anomaly_count": {"min": 1, "max": 1},
+                       "anomaly_templates": [template], "asset_profiles": []})
+    base = {**suite["scenario"], "assets": next(
+        profile["assets"] for profile in suite["generation"]["asset_profiles"]
+        if profile["profile_id"] == "compressor-single"
+    )}
+    for seed in range(50):
+        sampled = _generate_suite_scenario(
+            base, generation, np.random.default_rng(seed), f"placement-{seed}"
+        )
+        assert len(sampled["anomalies"]) == 1
+        assert sampled["anomalies"][0]["start"] == round(sampled["duration_s"] * 0.3)
+
+
 def test_challenge_v02_can_generate_ephemeral_compressor_air_leak(tmp_path):
     import yaml
 
@@ -795,7 +818,8 @@ def test_randomized_training_dataset_has_mixed_faults_and_auditable_partitions(t
         assert all(event["affected_signals"] == [] for event in truth["events"] if event["severity"] == 0)
         assert all(
             event["affected_signals"]
-            or (event["type"] == "missing_telemetry" and event["parameters"].get("loss_pct", 0) < 100)
+            or (event["type"] in {"missing_telemetry", "single_signal_loss"}
+                and event["parameters"].get("loss_pct", 0) < 100)
             for event in truth["events"] if event["severity"] > 0
         )
         assert truth["ground_truth_schema_version"] == "1.1.0"
