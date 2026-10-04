@@ -9,6 +9,7 @@ permissions: {}
 jobs:
   sign-assets:
     runs-on: ubuntu-24.04
+    environment: release-signing
     permissions:
       contents: write
       id-token: write

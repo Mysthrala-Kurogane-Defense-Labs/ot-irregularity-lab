@@ -11,6 +11,9 @@
   (including dataset manifests) and verifies their signatures before it
   completes. The action and actions/setup-go and actions/checkout references
   are pinned to immutable commit SHAs.
+- Both signing jobs now reference a protected `release-signing` GitHub
+  Environment. Required reviewer identities and allowed refs are external
+  repository settings and have not been configured yet.
 - Added operator and consumer instructions in `RELEASE_SIGNING.md`.
 
 ## Validation and limits
@@ -27,6 +30,10 @@
   checkout. The first live signing run must use GitHub Actions and be checked
   independently after an authorized new release. Earlier release tags and
   assets remain unsigned.
+- Read-only repository settings on 2026-10-04 showed no GitHub Environments,
+  rulesets or main-branch protection. Until `release-signing` has required
+  reviewers and allowed-ref restrictions, do not treat these workflows as an
+  approval gate or use them to sign a public release.
 
 ## Sources
 
