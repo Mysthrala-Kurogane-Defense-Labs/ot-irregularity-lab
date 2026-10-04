@@ -156,10 +156,11 @@ def test_difficulty_profiles_resolve_to_numeric_parameters():
 
     resolved = resolve_profiles({"anomalies": [{
         "type": "bearing_degradation", "difficulty": "hard",
-        "parameters": {"vibration_gain": 1.0, "temperature_gain": 0.4},
+        "parameters": {"vibration_gain": 1.0, "temperature_gain": 0.4, "loss_pct": 80},
     }]})["anomalies"][0]
     assert resolved["parameters"]["vibration_gain"] == 0.1
     assert resolved["parameters"]["temperature_gain"] == 0.04000000000000001
+    assert resolved["parameters"]["loss_pct"] == 8.0
     assert resolved["resolved_difficulty"] == {"profile": "hard", "gain_scale": 0.1}
 
 

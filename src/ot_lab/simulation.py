@@ -280,7 +280,10 @@ def resolve_profiles(data: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"unknown difficulty profile {profile_name!r}")
         gain_scale = profiles[profile_name]
         params = anomaly.setdefault("parameters", {})
-        explicit_keys = ("vibration_gain", "temperature_gain", "current_gain", "flow_loss", "pressure_loss", "pressure_loss_fraction", "bias", "magnitude", "rate_per_minute")
+        explicit_keys = (
+            "vibration_gain", "temperature_gain", "current_gain", "flow_loss", "pressure_loss",
+            "pressure_loss_fraction", "bias", "magnitude", "rate_per_minute", "loss_pct",
+        )
         for key in explicit_keys:
             if key in params and isinstance(params[key], (int, float)):
                 params[key] = float(params[key]) * gain_scale
