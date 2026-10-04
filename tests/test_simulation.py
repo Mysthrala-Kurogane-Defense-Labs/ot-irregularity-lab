@@ -1534,6 +1534,56 @@ generation:
     assert not (resumable / ".resume.json").exists()
 
 
+def test_resumable_coverage_uses_each_partition_size_and_checks_scenario_hash(tmp_path, monkeypatch):
+    from ot_lab import simulation
+
+    suite = tmp_path / "coverage-resume.yaml"
+    suite.write_text("""suite_id: coverage-resume-test
+partitions: {train: 0.70, validation: 0.15, test: 0.15}
+scenario:
+  scenario_id: coverage-resume-test
+  duration_s: 12
+  sampling_interval_ms: 1000
+  assets: [{asset_id: C-1, asset_class: compressor}]
+generation:
+  anomaly_probability: 0.0
+  coverage_by_partition: {air_leak: 50}
+  anomaly_templates:
+    - type: air_leak
+      asset_classes: [compressor]
+      parameters: {pressure_loss_fraction: {min: 0.1, max: 0.2}}
+""", encoding="utf-8")
+    output = tmp_path / "coverage-resume"
+    original = simulation.write_run
+    written = 0
+
+    def interrupt_after_two(*args, **kwargs):
+        nonlocal written
+        written += 1
+        if written == 3:
+            raise RuntimeError("stop after two coverage runs")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(simulation, "write_run", interrupt_after_two)
+    with pytest.raises(RuntimeError, match="stop after two coverage runs"):
+        simulation.batch(suite, 100, output, seed=20261011, resume=True)
+    monkeypatch.setattr(simulation, "write_run", original)
+    corrupt_run = output / "train" / "train-00002" / "run_metadata.json"
+    original_metadata = corrupt_run.read_text(encoding="utf-8")
+    metadata = json.loads(original_metadata)
+    metadata["scenario_sha256"] = "0" * 64
+    corrupt_run.write_text(json.dumps(metadata), encoding="utf-8")
+    with pytest.raises(ValueError, match="checkpoint run does not match deterministic scenario"):
+        simulation.batch(suite, 100, output, seed=20261011, resume=True)
+    corrupt_run.write_text(original_metadata, encoding="utf-8")
+    simulation.batch(suite, 100, output, seed=20261011, resume=True)
+    manifest = json.loads((output / "dataset_manifest.json").read_text())
+    assert manifest["event_distribution_by_partition"]["train"]["air_leak"] >= 7
+    assert manifest["event_distribution_by_partition"]["validation"]["air_leak"] >= 1
+    assert manifest["event_distribution_by_partition"]["test"]["air_leak"] >= 1
+
+
+
 def test_parallel_batch_matches_serial_runs_and_manifest(tmp_path):
     from ot_lab.simulation import batch
 

@@ -762,21 +762,28 @@ def _resume_batch(suite_path: Path, runs: int, output: Path, seed: int, workers:
     tasks = []
     for partition, index, run_id, run_seed in run_specs:
         run_dir = output / partition / run_id
-        if all((run_dir / name).is_file() for name in ("run_metadata.json", "ground_truth.json", "telemetry.parquet", "scenario.yaml")):
-            metadata = json.loads((run_dir / "run_metadata.json").read_text(encoding="utf-8"))
-            if metadata.get("seed") != run_seed:
-                raise ValueError(f"checkpoint run seed mismatch: {run_dir}")
-            continue
-        if run_dir.exists():
-            shutil.rmtree(run_dir)
         local_rng = np.random.default_rng(run_seed)
         base = suite["scenario"]
         generation = suite.get("generation", {})
-        scenario_data = _generate_dataset_scenario(base, generation, local_rng, run_id, index, count) if generation else json.loads(json.dumps(base))
+        scenario_data = _generate_dataset_scenario(
+            base, generation, local_rng, run_id, index, counts[partition]
+        ) if generation else json.loads(json.dumps(base))
         scenario_data["run_id"] = run_id
         scenario_data = _resolve_ranges(scenario_data, local_rng)
         scenario_data["run_id"] = run_id
         scenario = Scenario.model_validate(resolve_profiles(scenario_data))
+        expected_hash = hashlib.sha256(
+            json.dumps(scenario.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        if all((run_dir / name).is_file() for name in ("run_metadata.json", "ground_truth.json", "telemetry.parquet", "scenario.yaml")):
+            metadata = json.loads((run_dir / "run_metadata.json").read_text(encoding="utf-8"))
+            if metadata.get("seed") != run_seed:
+                raise ValueError(f"checkpoint run seed mismatch: {run_dir}")
+            if metadata.get("scenario_sha256") != expected_hash:
+                raise ValueError(f"checkpoint run does not match deterministic scenario: {run_dir}")
+            continue
+        if run_dir.exists():
+            shutil.rmtree(run_dir)
         tasks.append((scenario.model_dump(mode="json"), run_seed, str(run_dir)))
     if workers == 1:
         for task in tasks:
