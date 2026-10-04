@@ -1,0 +1,1278 @@
+{
+  "analysis_version": "1.0.0",
+  "conditioned_cycle_mean_summary": {
+    "accumulator": {
+      "all_cycle_counts_by_label": {
+        "100": 399,
+        "115": 399,
+        "130": 599,
+        "90": 808
+      },
+      "levels": {
+        "100": {
+          "cycles": 10,
+          "signals": {
+            "EPS1": {
+              "cycle_mean": {
+                "p05": 2537.300313,
+                "p50": 2537.790167,
+                "p95": 2539.002142
+              },
+              "within_cycle_sd_p50": 187.287423
+            },
+            "FS1": {
+              "cycle_mean": {
+                "p05": 6.687237,
+                "p50": 6.690285,
+                "p95": 6.696898
+              },
+              "within_cycle_sd_p50": 3.015882
+            },
+            "FS2": {
+              "cycle_mean": {
+                "p05": 10.138874,
+                "p50": 10.140832,
+                "p95": 10.144033
+              },
+              "within_cycle_sd_p50": 0.014913
+            },
+            "PS1": {
+              "cycle_mean": {
+                "p05": 160.959551,
+                "p50": 160.983983,
+                "p95": 160.995361
+              },
+              "within_cycle_sd_p50": 14.028324
+            },
+            "PS2": {
+              "cycle_mean": {
+                "p05": 109.580907,
+                "p50": 109.612753,
+                "p95": 109.635036
+              },
+              "within_cycle_sd_p50": 47.130104
+            },
+            "PS3": {
+              "cycle_mean": {
+                "p05": 1.99103,
+                "p50": 2.002347,
+                "p95": 2.00749
+              },
+              "within_cycle_sd_p50": 0.941421
+            },
+            "PS4": {
+              "cycle_mean": {
+                "p05": 10.07608,
+                "p50": 10.08065,
+                "p95": 10.084141
+              },
+              "within_cycle_sd_p50": 0.023425
+            },
+            "PS5": {
+              "cycle_mean": {
+                "p05": 9.849256,
+                "p50": 9.853379,
+                "p95": 9.855465
+              },
+              "within_cycle_sd_p50": 0.021631
+            },
+            "PS6": {
+              "cycle_mean": {
+                "p05": 9.732276,
+                "p50": 9.736656,
+                "p95": 9.73908
+              },
+              "within_cycle_sd_p50": 0.02161
+            }
+          }
+        },
+        "115": {
+          "cycles": 10,
+          "signals": {
+            "EPS1": {
+              "cycle_mean": {
+                "p05": 2537.411367,
+                "p50": 2540.441133,
+                "p95": 2542.816862
+              },
+              "within_cycle_sd_p50": 186.907242
+            },
+            "FS1": {
+              "cycle_mean": {
+                "p05": 6.694899,
+                "p50": 6.705463,
+                "p95": 6.706927
+              },
+              "within_cycle_sd_p50": 3.01682
+            },
+            "FS2": {
+              "cycle_mean": {
+                "p05": 10.147541,
+                "p50": 10.153977,
+                "p95": 10.162376
+              },
+              "within_cycle_sd_p50": 0.015212
+            },
+            "PS1": {
+              "cycle_mean": {
+                "p05": 160.919975,
+                "p50": 160.937013,
+                "p95": 160.954162
+              },
+              "within_cycle_sd_p50": 14.004574
+            },
+            "PS2": {
+              "cycle_mean": {
+                "p05": 109.536632,
+                "p50": 109.558573,
+                "p95": 109.574718
+              },
+              "within_cycle_sd_p50": 47.139888
+            },
+            "PS3": {
+              "cycle_mean": {
+                "p05": 1.998894,
+                "p50": 2.004053,
+                "p95": 2.01247
+              },
+              "within_cycle_sd_p50": 0.947793
+            },
+            "PS4": {
+              "cycle_mean": {
+                "p05": 8.561372,
+                "p50": 10.059294,
+                "p95": 10.064909
+              },
+              "within_cycle_sd_p50": 0.02366
+            },
+            "PS5": {
+              "cycle_mean": {
+                "p05": 9.828752,
+                "p50": 9.831668,
+                "p95": 9.837027
+              },
+              "within_cycle_sd_p50": 0.021548
+            },
+            "PS6": {
+              "cycle_mean": {
+                "p05": 9.713851,
+                "p50": 9.717313,
+                "p95": 9.723048
+              },
+              "within_cycle_sd_p50": 0.021926
+            }
+          }
+        },
+        "130": {
+          "cycles": 10,
+          "signals": {
+            "EPS1": {
+              "cycle_mean": {
+                "p05": 2530.702718,
+                "p50": 2533.07985,
+                "p95": 2538.031718
+              },
+              "within_cycle_sd_p50": 186.302661
+            },
+            "FS1": {
+              "cycle_mean": {
+                "p05": 6.69664,
+                "p50": 6.712268,
+                "p95": 6.717551
+              },
+              "within_cycle_sd_p50": 3.026044
+            },
+            "FS2": {
+              "cycle_mean": {
+                "p05": 10.159696,
+                "p50": 10.162535,
+                "p95": 10.166984
+              },
+              "within_cycle_sd_p50": 0.014525
+            },
+            "PS1": {
+              "cycle_mean": {
+                "p05": 160.985208,
+                "p50": 160.998548,
+                "p95": 161.012076
+              },
+              "within_cycle_sd_p50": 13.968019
+            },
+            "PS2": {
+              "cycle_mean": {
+                "p05": 109.599057,
+                "p50": 109.618208,
+                "p95": 109.63454
+              },
+              "within_cycle_sd_p50": 47.168197
+            },
+            "PS3": {
+              "cycle_mean": {
+                "p05": 1.992805,
+                "p50": 1.998297,
+                "p95": 2.006549
+              },
+              "within_cycle_sd_p50": 0.950523
+            },
+            "PS4": {
+              "cycle_mean": {
+                "p05": 10.05227,
+                "p50": 10.057098,
+                "p95": 10.063948
+              },
+              "within_cycle_sd_p50": 0.023857
+            },
+            "PS5": {
+              "cycle_mean": {
+                "p05": 9.823834,
+                "p50": 9.829047,
+                "p95": 9.835103
+              },
+              "within_cycle_sd_p50": 0.021769
+            },
+            "PS6": {
+              "cycle_mean": {
+                "p05": 9.708932,
+                "p50": 9.714704,
+                "p95": 9.720731
+              },
+              "within_cycle_sd_p50": 0.022217
+            }
+          }
+        },
+        "90": {
+          "cycles": 19,
+          "signals": {
+            "EPS1": {
+              "cycle_mean": {
+                "p05": 2542.686693,
+                "p50": 2545.0043,
+                "p95": 2547.540533
+              },
+              "within_cycle_sd_p50": 186.830661
+            },
+            "FS1": {
+              "cycle_mean": {
+                "p05": 6.68935,
+                "p50": 6.693777,
+                "p95": 6.698239
+              },
+              "within_cycle_sd_p50": 3.001478
+            },
+            "FS2": {
+              "cycle_mean": {
+                "p05": 10.177607,
+                "p50": 10.183393,
+                "p95": 10.187656
+              },
+              "within_cycle_sd_p50": 0.014525
+            },
+            "PS1": {
+              "cycle_mean": {
+                "p05": 161.20448,
+                "p50": 161.221512,
+                "p95": 161.236472
+              },
+              "within_cycle_sd_p50": 13.99479
+            },
+            "PS2": {
+              "cycle_mean": {
+                "p05": 109.75594,
+                "p50": 109.787481,
+                "p95": 109.80823
+              },
+              "within_cycle_sd_p50": 47.234863
+            },
+            "PS3": {
+              "cycle_mean": {
+                "p05": 1.99306,
+                "p50": 2.001049,
+                "p95": 2.006711
+              },
+              "within_cycle_sd_p50": 0.93156
+            },
+            "PS4": {
+              "cycle_mean": {
+                "p05": 10.190664,
+                "p50": 10.200629,
+                "p95": 10.206091
+              },
+              "within_cycle_sd_p50": 0.02374
+            },
+            "PS5": {
+              "cycle_mean": {
+                "p05": 9.960586,
+                "p50": 9.969385,
+                "p95": 9.977229
+              },
+              "within_cycle_sd_p50": 0.022768
+            },
+            "PS6": {
+              "cycle_mean": {
+                "p05": 9.840415,
+                "p50": 9.848438,
+                "p95": 9.854924
+              },
+              "within_cycle_sd_p50": 0.022191
+            }
+          }
+        }
+      },
+      "other_conditions_nominal_and_stable": true
+    },
+    "cooler": {
+      "all_cycle_counts_by_label": {
+        "100": 741,
+        "20": 732,
+        "3": 732
+      },
+      "levels": {
+        "100": {
+          "cycles": 10,
+          "signals": {
+            "CE": {
+              "cycle_mean": {
+                "p05": 47.379022,
+                "p50": 47.587892,
+                "p95": 47.840311
+              },
+              "within_cycle_sd_p50": 0.307454
+            },
+            "CP": {
+              "cycle_mean": {
+                "p05": 2.162398,
+                "p50": 2.166558,
+                "p95": 2.177491
+              },
+              "within_cycle_sd_p50": 0.020282
+            },
+            "EPS1": {
+              "cycle_mean": {
+                "p05": 2530.702718,
+                "p50": 2533.07985,
+                "p95": 2538.031718
+              },
+              "within_cycle_sd_p50": 186.302661
+            },
+            "FS1": {
+              "cycle_mean": {
+                "p05": 6.69664,
+                "p50": 6.712268,
+                "p95": 6.717551
+              },
+              "within_cycle_sd_p50": 3.026044
+            },
+            "FS2": {
+              "cycle_mean": {
+                "p05": 10.159696,
+                "p50": 10.162535,
+                "p95": 10.166984
+              },
+              "within_cycle_sd_p50": 0.014525
+            },
+            "TS1": {
+              "cycle_mean": {
+                "p05": 36.255322,
+                "p50": 36.2805,
+                "p95": 36.309415
+              },
+              "within_cycle_sd_p50": 0.146124
+            },
+            "TS2": {
+              "cycle_mean": {
+                "p05": 41.86148,
+                "p50": 41.889158,
+                "p95": 41.914251
+              },
+              "within_cycle_sd_p50": 0.056915
+            },
+            "TS3": {
+              "cycle_mean": {
+                "p05": 39.132573,
+                "p50": 39.160733,
+                "p95": 39.187745
+              },
+              "within_cycle_sd_p50": 0.062135
+            },
+            "TS4": {
+              "cycle_mean": {
+                "p05": 31.187892,
+                "p50": 31.242133,
+                "p95": 31.279473
+              },
+              "within_cycle_sd_p50": 0.030753
+            }
+          }
+        },
+        "20": {
+          "cycles": 10,
+          "signals": {
+            "CE": {
+              "cycle_mean": {
+                "p05": 27.903863,
+                "p50": 27.9953,
+                "p95": 28.133076
+              },
+              "within_cycle_sd_p50": 0.259733
+            },
+            "CP": {
+              "cycle_mean": {
+                "p05": 1.746876,
+                "p50": 1.758317,
+                "p95": 1.767278
+              },
+              "within_cycle_sd_p50": 0.018875
+            },
+            "EPS1": {
+              "cycle_mean": {
+                "p05": 2446.813415,
+                "p50": 2452.899583,
+                "p95": 2455.503052
+              },
+              "within_cycle_sd_p50": 194.839285
+            },
+            "FS1": {
+              "cycle_mean": {
+                "p05": 6.662603,
+                "p50": 6.678086,
+                "p95": 6.684963
+              },
+              "within_cycle_sd_p50": 3.02405
+            },
+            "FS2": {
+              "cycle_mean": {
+                "p05": 9.651499,
+                "p50": 9.657613,
+                "p95": 9.660755
+              },
+              "within_cycle_sd_p50": 0.014029
+            },
+            "TS1": {
+              "cycle_mean": {
+                "p05": 45.51644,
+                "p50": 45.556025,
+                "p95": 45.584847
+              },
+              "within_cycle_sd_p50": 0.199999
+            },
+            "TS2": {
+              "cycle_mean": {
+                "p05": 50.467035,
+                "p50": 50.503517,
+                "p95": 50.528547
+              },
+              "within_cycle_sd_p50": 0.127225
+            },
+            "TS3": {
+              "cycle_mean": {
+                "p05": 47.764991,
+                "p50": 47.769883,
+                "p95": 47.809448
+              },
+              "within_cycle_sd_p50": 0.058434
+            },
+            "TS4": {
+              "cycle_mean": {
+                "p05": 40.979658,
+                "p50": 41.025333,
+                "p95": 41.077682
+              },
+              "within_cycle_sd_p50": 0.037454
+            }
+          }
+        },
+        "3": {
+          "cycles": 10,
+          "signals": {
+            "CE": {
+              "cycle_mean": {
+                "p05": 20.375942,
+                "p50": 20.596658,
+                "p95": 20.74641
+              },
+              "within_cycle_sd_p50": 0.29226
+            },
+            "CP": {
+              "cycle_mean": {
+                "p05": 1.604463,
+                "p50": 1.6234,
+                "p95": 1.633404
+              },
+              "within_cycle_sd_p50": 0.025428
+            },
+            "EPS1": {
+              "cycle_mean": {
+                "p05": 2391.589967,
+                "p50": 2394.350267,
+                "p95": 2397.098105
+              },
+              "within_cycle_sd_p50": 199.11833
+            },
+            "FS1": {
+              "cycle_mean": {
+                "p05": 6.585843,
+                "p50": 6.59917,
+                "p95": 6.606489
+              },
+              "within_cycle_sd_p50": 2.969379
+            },
+            "FS2": {
+              "cycle_mean": {
+                "p05": 9.1508,
+                "p50": 9.156223,
+                "p95": 9.17094
+              },
+              "within_cycle_sd_p50": 0.017117
+            },
+            "TS1": {
+              "cycle_mean": {
+                "p05": 54.658215,
+                "p50": 54.76155,
+                "p95": 54.893014
+              },
+              "within_cycle_sd_p50": 0.206248
+            },
+            "TS2": {
+              "cycle_mean": {
+                "p05": 59.361757,
+                "p50": 59.46195,
+                "p95": 59.563886
+              },
+              "within_cycle_sd_p50": 0.12863
+            },
+            "TS3": {
+              "cycle_mean": {
+                "p05": 56.230668,
+                "p50": 56.332692,
+                "p95": 56.445432
+              },
+              "within_cycle_sd_p50": 0.082334
+            },
+            "TS4": {
+              "cycle_mean": {
+                "p05": 49.628741,
+                "p50": 49.750433,
+                "p95": 49.932167
+              },
+              "within_cycle_sd_p50": 0.065737
+            }
+          }
+        }
+      },
+      "other_conditions_nominal_and_stable": true
+    },
+    "internal_pump_leakage": {
+      "all_cycle_counts_by_label": {
+        "0": 1221,
+        "1": 492,
+        "2": 492
+      },
+      "levels": {
+        "0": {
+          "cycles": 10,
+          "signals": {
+            "EPS1": {
+              "cycle_mean": {
+                "p05": 2530.702718,
+                "p50": 2533.07985,
+                "p95": 2538.031718
+              },
+              "within_cycle_sd_p50": 186.302661
+            },
+            "FS1": {
+              "cycle_mean": {
+                "p05": 6.69664,
+                "p50": 6.712268,
+                "p95": 6.717551
+              },
+              "within_cycle_sd_p50": 3.026044
+            },
+            "FS2": {
+              "cycle_mean": {
+                "p05": 10.159696,
+                "p50": 10.162535,
+                "p95": 10.166984
+              },
+              "within_cycle_sd_p50": 0.014525
+            },
+            "PS1": {
+              "cycle_mean": {
+                "p05": 160.985208,
+                "p50": 160.998548,
+                "p95": 161.012076
+              },
+              "within_cycle_sd_p50": 13.968019
+            },
+            "PS2": {
+              "cycle_mean": {
+                "p05": 109.599057,
+                "p50": 109.618208,
+                "p95": 109.63454
+              },
+              "within_cycle_sd_p50": 47.168197
+            },
+            "PS3": {
+              "cycle_mean": {
+                "p05": 1.992805,
+                "p50": 1.998297,
+                "p95": 2.006549
+              },
+              "within_cycle_sd_p50": 0.950523
+            },
+            "PS4": {
+              "cycle_mean": {
+                "p05": 10.05227,
+                "p50": 10.057098,
+                "p95": 10.063948
+              },
+              "within_cycle_sd_p50": 0.023857
+            },
+            "PS5": {
+              "cycle_mean": {
+                "p05": 9.823834,
+                "p50": 9.829047,
+                "p95": 9.835103
+              },
+              "within_cycle_sd_p50": 0.021769
+            },
+            "PS6": {
+              "cycle_mean": {
+                "p05": 9.708932,
+                "p50": 9.714704,
+                "p95": 9.720731
+              },
+              "within_cycle_sd_p50": 0.022217
+            },
+            "TS1": {
+              "cycle_mean": {
+                "p05": 36.255322,
+                "p50": 36.2805,
+                "p95": 36.309415
+              },
+              "within_cycle_sd_p50": 0.146124
+            },
+            "TS2": {
+              "cycle_mean": {
+                "p05": 41.86148,
+                "p50": 41.889158,
+                "p95": 41.914251
+              },
+              "within_cycle_sd_p50": 0.056915
+            },
+            "TS3": {
+              "cycle_mean": {
+                "p05": 39.132573,
+                "p50": 39.160733,
+                "p95": 39.187745
+              },
+              "within_cycle_sd_p50": 0.062135
+            },
+            "TS4": {
+              "cycle_mean": {
+                "p05": 31.187892,
+                "p50": 31.242133,
+                "p95": 31.279473
+              },
+              "within_cycle_sd_p50": 0.030753
+            },
+            "VS1": {
+              "cycle_mean": {
+                "p05": 0.545727,
+                "p50": 0.552158,
+                "p95": 0.558298
+              },
+              "within_cycle_sd_p50": 0.023512
+            }
+          }
+        },
+        "1": {
+          "cycles": 10,
+          "signals": {
+            "EPS1": {
+              "cycle_mean": {
+                "p05": 2548.344772,
+                "p50": 2550.15425,
+                "p95": 2553.02464
+              },
+              "within_cycle_sd_p50": 186.705198
+            },
+            "FS1": {
+              "cycle_mean": {
+                "p05": 6.51483,
+                "p50": 6.525265,
+                "p95": 6.534437
+              },
+              "within_cycle_sd_p50": 2.953712
+            },
+            "FS2": {
+              "cycle_mean": {
+                "p05": 10.175827,
+                "p50": 10.178221,
+                "p95": 10.1824
+              },
+              "within_cycle_sd_p50": 0.014305
+            },
+            "PS1": {
+              "cycle_mean": {
+                "p05": 160.612439,
+                "p50": 160.623909,
+                "p95": 160.655417
+              },
+              "within_cycle_sd_p50": 13.998831
+            },
+            "PS2": {
+              "cycle_mean": {
+                "p05": 109.376298,
+                "p50": 109.398634,
+                "p95": 109.420275
+              },
+              "within_cycle_sd_p50": 47.059259
+            },
+            "PS3": {
+              "cycle_mean": {
+                "p05": 1.947584,
+                "p50": 1.953094,
+                "p95": 1.963195
+              },
+              "within_cycle_sd_p50": 0.930884
+            },
+            "PS4": {
+              "cycle_mean": {
+                "p05": 10.104678,
+                "p50": 10.110339,
+                "p95": 10.117928
+              },
+              "within_cycle_sd_p50": 0.023394
+            },
+            "PS5": {
+              "cycle_mean": {
+                "p05": 9.871978,
+                "p50": 9.876053,
+                "p95": 9.883483
+              },
+              "within_cycle_sd_p50": 0.022216
+            },
+            "PS6": {
+              "cycle_mean": {
+                "p05": 9.754108,
+                "p50": 9.758676,
+                "p95": 9.765514
+              },
+              "within_cycle_sd_p50": 0.021906
+            },
+            "TS1": {
+              "cycle_mean": {
+                "p05": 35.965967,
+                "p50": 35.984033,
+                "p95": 36.009977
+              },
+              "within_cycle_sd_p50": 0.147836
+            },
+            "TS2": {
+              "cycle_mean": {
+                "p05": 41.553012,
+                "p50": 41.5717,
+                "p95": 41.585909
+              },
+              "within_cycle_sd_p50": 0.055401
+            },
+            "TS3": {
+              "cycle_mean": {
+                "p05": 38.82581,
+                "p50": 38.836492,
+                "p95": 38.84562
+              },
+              "within_cycle_sd_p50": 0.081282
+            },
+            "TS4": {
+              "cycle_mean": {
+                "p05": 30.931677,
+                "p50": 30.972908,
+                "p95": 30.98868
+              },
+              "within_cycle_sd_p50": 0.035691
+            },
+            "VS1": {
+              "cycle_mean": {
+                "p05": 0.547233,
+                "p50": 0.551583,
+                "p95": 0.555518
+              },
+              "within_cycle_sd_p50": 0.02564
+            }
+          }
+        },
+        "2": {
+          "cycles": 10,
+          "signals": {
+            "EPS1": {
+              "cycle_mean": {
+                "p05": 2573.664182,
+                "p50": 2575.246467,
+                "p95": 2581.033042
+              },
+              "within_cycle_sd_p50": 186.340251
+            },
+            "FS1": {
+              "cycle_mean": {
+                "p05": 6.426235,
+                "p50": 6.431749,
+                "p95": 6.436771
+              },
+              "within_cycle_sd_p50": 2.915911
+            },
+            "FS2": {
+              "cycle_mean": {
+                "p05": 10.202292,
+                "p50": 10.208282,
+                "p95": 10.210724
+              },
+              "within_cycle_sd_p50": 0.014568
+            },
+            "PS1": {
+              "cycle_mean": {
+                "p05": 160.427137,
+                "p50": 160.442219,
+                "p95": 160.456171
+              },
+              "within_cycle_sd_p50": 14.039905
+            },
+            "PS2": {
+              "cycle_mean": {
+                "p05": 109.22858,
+                "p50": 109.247384,
+                "p95": 109.261964
+              },
+              "within_cycle_sd_p50": 46.986472
+            },
+            "PS3": {
+              "cycle_mean": {
+                "p05": 1.914614,
+                "p50": 1.92488,
+                "p95": 1.933223
+              },
+              "within_cycle_sd_p50": 0.920144
+            },
+            "PS4": {
+              "cycle_mean": {
+                "p05": 10.161015,
+                "p50": 10.16429,
+                "p95": 10.175992
+              },
+              "within_cycle_sd_p50": 0.023301
+            },
+            "PS5": {
+              "cycle_mean": {
+                "p05": 9.927714,
+                "p50": 9.930666,
+                "p95": 9.943801
+              },
+              "within_cycle_sd_p50": 0.021469
+            },
+            "PS6": {
+              "cycle_mean": {
+                "p05": 9.80959,
+                "p50": 9.812866,
+                "p95": 9.824798
+              },
+              "within_cycle_sd_p50": 0.02218
+            },
+            "TS1": {
+              "cycle_mean": {
+                "p05": 35.720679,
+                "p50": 35.742508,
+                "p95": 35.767537
+              },
+              "within_cycle_sd_p50": 0.14565
+            },
+            "TS2": {
+              "cycle_mean": {
+                "p05": 41.262621,
+                "p50": 41.309983,
+                "p95": 41.335566
+              },
+              "within_cycle_sd_p50": 0.061376
+            },
+            "TS3": {
+              "cycle_mean": {
+                "p05": 38.612302,
+                "p50": 38.622808,
+                "p95": 38.641573
+              },
+              "within_cycle_sd_p50": 0.068633
+            },
+            "TS4": {
+              "cycle_mean": {
+                "p05": 30.655399,
+                "p50": 30.72125,
+                "p95": 30.778167
+              },
+              "within_cycle_sd_p50": 0.040867
+            },
+            "VS1": {
+              "cycle_mean": {
+                "p05": 0.531249,
+                "p50": 0.536375,
+                "p95": 0.539861
+              },
+              "within_cycle_sd_p50": 0.024261
+            }
+          }
+        }
+      },
+      "other_conditions_nominal_and_stable": true
+    },
+    "valve": {
+      "all_cycle_counts_by_label": {
+        "100": 1125,
+        "73": 360,
+        "80": 360,
+        "90": 360
+      },
+      "levels": {
+        "100": {
+          "cycles": 10,
+          "signals": {
+            "EPS1": {
+              "cycle_mean": {
+                "p05": 2530.702718,
+                "p50": 2533.07985,
+                "p95": 2538.031718
+              },
+              "within_cycle_sd_p50": 186.302661
+            },
+            "FS1": {
+              "cycle_mean": {
+                "p05": 6.69664,
+                "p50": 6.712268,
+                "p95": 6.717551
+              },
+              "within_cycle_sd_p50": 3.026044
+            },
+            "FS2": {
+              "cycle_mean": {
+                "p05": 10.159696,
+                "p50": 10.162535,
+                "p95": 10.166984
+              },
+              "within_cycle_sd_p50": 0.014525
+            },
+            "PS1": {
+              "cycle_mean": {
+                "p05": 160.985208,
+                "p50": 160.998548,
+                "p95": 161.012076
+              },
+              "within_cycle_sd_p50": 13.968019
+            },
+            "PS2": {
+              "cycle_mean": {
+                "p05": 109.599057,
+                "p50": 109.618208,
+                "p95": 109.63454
+              },
+              "within_cycle_sd_p50": 47.168197
+            },
+            "PS3": {
+              "cycle_mean": {
+                "p05": 1.992805,
+                "p50": 1.998297,
+                "p95": 2.006549
+              },
+              "within_cycle_sd_p50": 0.950523
+            },
+            "PS4": {
+              "cycle_mean": {
+                "p05": 10.05227,
+                "p50": 10.057098,
+                "p95": 10.063948
+              },
+              "within_cycle_sd_p50": 0.023857
+            },
+            "PS5": {
+              "cycle_mean": {
+                "p05": 9.823834,
+                "p50": 9.829047,
+                "p95": 9.835103
+              },
+              "within_cycle_sd_p50": 0.021769
+            },
+            "PS6": {
+              "cycle_mean": {
+                "p05": 9.708932,
+                "p50": 9.714704,
+                "p95": 9.720731
+              },
+              "within_cycle_sd_p50": 0.022217
+            }
+          }
+        },
+        "73": {
+          "cycles": 10,
+          "signals": {
+            "EPS1": {
+              "cycle_mean": {
+                "p05": 2536.936568,
+                "p50": 2538.484333,
+                "p95": 2540.738992
+              },
+              "within_cycle_sd_p50": 188.337122
+            },
+            "FS1": {
+              "cycle_mean": {
+                "p05": 6.658857,
+                "p50": 6.663407,
+                "p95": 6.670688
+              },
+              "within_cycle_sd_p50": 3.065104
+            },
+            "FS2": {
+              "cycle_mean": {
+                "p05": 10.16467,
+                "p50": 10.167959,
+                "p95": 10.173716
+              },
+              "within_cycle_sd_p50": 0.01466
+            },
+            "PS1": {
+              "cycle_mean": {
+                "p05": 161.259294,
+                "p50": 161.268976,
+                "p95": 161.278209
+              },
+              "within_cycle_sd_p50": 14.101937
+            },
+            "PS2": {
+              "cycle_mean": {
+                "p05": 109.036712,
+                "p50": 109.050846,
+                "p95": 109.075348
+              },
+              "within_cycle_sd_p50": 47.784161
+            },
+            "PS3": {
+              "cycle_mean": {
+                "p05": 1.983172,
+                "p50": 1.995391,
+                "p95": 2.009637
+              },
+              "within_cycle_sd_p50": 0.963659
+            },
+            "PS4": {
+              "cycle_mean": {
+                "p05": 10.082574,
+                "p50": 10.084657,
+                "p95": 10.097388
+              },
+              "within_cycle_sd_p50": 0.023479
+            },
+            "PS5": {
+              "cycle_mean": {
+                "p05": 9.850103,
+                "p50": 9.851712,
+                "p95": 9.863328
+              },
+              "within_cycle_sd_p50": 0.021644
+            },
+            "PS6": {
+              "cycle_mean": {
+                "p05": 9.734432,
+                "p50": 9.736132,
+                "p95": 9.747391
+              },
+              "within_cycle_sd_p50": 0.02158
+            }
+          }
+        },
+        "80": {
+          "cycles": 10,
+          "signals": {
+            "EPS1": {
+              "cycle_mean": {
+                "p05": 2534.847268,
+                "p50": 2537.12,
+                "p95": 2543.292108
+              },
+              "within_cycle_sd_p50": 187.631336
+            },
+            "FS1": {
+              "cycle_mean": {
+                "p05": 6.69216,
+                "p50": 6.693893,
+                "p95": 6.696369
+              },
+              "within_cycle_sd_p50": 3.070069
+            },
+            "FS2": {
+              "cycle_mean": {
+                "p05": 10.163902,
+                "p50": 10.166928,
+                "p95": 10.170523
+              },
+              "within_cycle_sd_p50": 0.014653
+            },
+            "PS1": {
+              "cycle_mean": {
+                "p05": 161.144918,
+                "p50": 161.166069,
+                "p95": 161.178198
+              },
+              "within_cycle_sd_p50": 14.046669
+            },
+            "PS2": {
+              "cycle_mean": {
+                "p05": 109.289707,
+                "p50": 109.302317,
+                "p95": 109.320065
+              },
+              "within_cycle_sd_p50": 47.514864
+            },
+            "PS3": {
+              "cycle_mean": {
+                "p05": 1.983796,
+                "p50": 1.998063,
+                "p95": 2.00186
+              },
+              "within_cycle_sd_p50": 0.957725
+            },
+            "PS4": {
+              "cycle_mean": {
+                "p05": 10.073571,
+                "p50": 10.076543,
+                "p95": 10.080348
+              },
+              "within_cycle_sd_p50": 0.023465
+            },
+            "PS5": {
+              "cycle_mean": {
+                "p05": 9.841544,
+                "p50": 9.844631,
+                "p95": 9.849413
+              },
+              "within_cycle_sd_p50": 0.021648
+            },
+            "PS6": {
+              "cycle_mean": {
+                "p05": 9.726264,
+                "p50": 9.728955,
+                "p95": 9.73247
+              },
+              "within_cycle_sd_p50": 0.021836
+            }
+          }
+        },
+        "90": {
+          "cycles": 10,
+          "signals": {
+            "EPS1": {
+              "cycle_mean": {
+                "p05": 2537.404763,
+                "p50": 2538.408183,
+                "p95": 2542.531005
+              },
+              "within_cycle_sd_p50": 189.133431
+            },
+            "FS1": {
+              "cycle_mean": {
+                "p05": 6.704135,
+                "p50": 6.706852,
+                "p95": 6.708693
+              },
+              "within_cycle_sd_p50": 3.065165
+            },
+            "FS2": {
+              "cycle_mean": {
+                "p05": 10.1606,
+                "p50": 10.165018,
+                "p95": 10.169174
+              },
+              "within_cycle_sd_p50": 0.014435
+            },
+            "PS1": {
+              "cycle_mean": {
+                "p05": 161.044094,
+                "p50": 161.058953,
+                "p95": 161.074647
+              },
+              "within_cycle_sd_p50": 14.003632
+            },
+            "PS2": {
+              "cycle_mean": {
+                "p05": 109.466953,
+                "p50": 109.484867,
+                "p95": 109.512406
+              },
+              "within_cycle_sd_p50": 47.303882
+            },
+            "PS3": {
+              "cycle_mean": {
+                "p05": 1.998327,
+                "p50": 2.005059,
+                "p95": 2.012861
+              },
+              "within_cycle_sd_p50": 0.956317
+            },
+            "PS4": {
+              "cycle_mean": {
+                "p05": 10.057664,
+                "p50": 10.06324,
+                "p95": 10.076679
+              },
+              "within_cycle_sd_p50": 0.023639
+            },
+            "PS5": {
+              "cycle_mean": {
+                "p05": 9.831632,
+                "p50": 9.836796,
+                "p95": 9.84579
+              },
+              "within_cycle_sd_p50": 0.021413
+            },
+            "PS6": {
+              "cycle_mean": {
+                "p05": 9.716117,
+                "p50": 9.722007,
+                "p95": 9.730217
+              },
+              "within_cycle_sd_p50": 0.021658
+            }
+          }
+        }
+      },
+      "other_conditions_nominal_and_stable": true
+    }
+  },
+  "design": {
+    "interpretation": "The four component condition values describe graded degradation rather than independent categorical faults; stable_flag=1 means steady state may not yet have been reached.",
+    "target_labels": [
+      "cooler_condition_pct",
+      "valve_condition_pct",
+      "internal_pump_leakage_class",
+      "accumulator_pressure_bar",
+      "stable_flag"
+    ]
+  },
+  "interpretation": [
+    "Profiles isolate one component label while holding other component labels at their nominal values and stable_flag at 0.",
+    "Summaries describe one experimental hydraulic test rig and are not universal operating limits, causal effects, or failure prevalence estimates.",
+    "Motor power is measured, but motor current and RPM are absent; those simulator signals cannot be calibrated from this dataset.",
+    "Labels are cycle-wise, so they do not identify the onset time within a 60-second cycle.",
+    "No raw source observations or time-series rows are emitted."
+  ],
+  "nominal_baseline_cycles": 10,
+  "source": {
+    "archive_bytes": 76601704,
+    "archive_sha256": "24128aad2ee45eea7e6b63ebbd9992cdf25d0483a2cebefbfc13bc69079af1f2",
+    "cycle_duration_s": 60,
+    "cycles": 2205,
+    "dataset": "Condition monitoring of hydraulic systems (ZeMA hydraulic test rig)",
+    "doi": "10.24432/C5CW21",
+    "license": "CC BY 4.0",
+    "publisher": "UCI Machine Learning Repository",
+    "sampling_hz": {
+      "flow": 10,
+      "pressure_and_motor_power": 100,
+      "temperature_vibration_efficiency": 1
+    }
+  }
+}
