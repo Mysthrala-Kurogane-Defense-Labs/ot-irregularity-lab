@@ -35,6 +35,14 @@ class Anomaly(BaseModel):
     @field_validator("parameters")
     @classmethod
     def validate_parameter_maps(cls, value: dict[str, Any]) -> dict[str, Any]:
+        onset_delay_power = value.get("onset_delay_power")
+        if onset_delay_power is not None and (
+            isinstance(onset_delay_power, bool)
+            or not isinstance(onset_delay_power, (int, float))
+            or not float("-inf") < onset_delay_power < float("inf")
+            or not 0 <= onset_delay_power <= 4
+        ):
+            raise ValueError("onset_delay_power must be finite and within 0..4")
         weights = value.get("tag_weights")
         if weights is not None and (
             not isinstance(weights, dict)

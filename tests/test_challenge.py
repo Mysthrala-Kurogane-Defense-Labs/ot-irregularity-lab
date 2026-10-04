@@ -164,6 +164,18 @@ def test_difficulty_profiles_resolve_to_numeric_parameters():
     assert resolved["resolved_difficulty"] == {"profile": "hard", "gain_scale": 0.1}
 
 
+def test_very_hard_profile_resolves_slow_onset_for_progressive_faults():
+    from ot_lab.simulation import resolve_profiles
+
+    resolved = resolve_profiles({"anomalies": [
+        {"type": "bearing_degradation", "difficulty": "very_hard", "parameters": {"vibration_gain": 1.0}},
+        {"type": "sudden_spike", "difficulty": "very_hard", "parameters": {"magnitude": 10.0}},
+    ]})["anomalies"]
+    assert resolved[0]["parameters"]["vibration_gain"] == 0.05
+    assert resolved[0]["parameters"]["onset_delay_power"] == 1.0
+    assert "onset_delay_power" not in resolved[1]["parameters"]
+
+
 def test_range_resolution_rejects_invalid_challenge_bounds(tmp_path):
     suite = tmp_path / "suite.yaml"
     suite.write_text("""scenario:

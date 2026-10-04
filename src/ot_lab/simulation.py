@@ -288,8 +288,11 @@ def resolve_profiles(data: dict[str, Any]) -> dict[str, Any]:
             if key in params and isinstance(params[key], (int, float)):
                 params[key] = float(params[key]) * gain_scale
         anomaly["resolved_difficulty"] = {"profile": profile_name, "gain_scale": gain_scale}
-        if "progression" in params and params["progression"] == "linear":
-            params["progression_rate_scale"] = 1.0 / gain_scale
+        if profile_name == "very_hard" and anomaly.get("type") in {
+            "bearing_degradation", "cavitation", "air_leak", "cooling_degradation",
+            "mechanical_overload", "sensor_drift", "regime_mismatch", "maintenance_activity",
+        }:
+            params["onset_delay_power"] = 1.0
     return resolved
 
 
@@ -306,11 +309,16 @@ def _affect(
     affected: set[str] = set()
     quality = "GOOD"
     kind = event.type
-    fraction = min(1.0, max(0.0, (seconds - event.start) / max(event.duration, 1)))
+    fraction = min(1.0, max(0.0, (seconds - event.start) / event.duration))
     p = event.parameters
     # Severity scales configured continuous magnitudes. Communication loss has
     # a separate base probability and selection policy so both can be calibrated.
     severity_scale = float(np.clip(event.severity, 0.0, 1.0))
+    delay_power = float(p.get("onset_delay_power", 0.0))
+    if not np.isfinite(delay_power) or not 0 <= delay_power <= 4:
+        raise ValueError("onset_delay_power must be finite and within 0..4")
+    onset_multiplier = fraction**delay_power if delay_power else 1.0
+    linear_progress = fraction * onset_multiplier
     def draw_for(signal: str, label: str) -> float:
         token = f"{run_seed}|{event.asset}|{signal}|{sample_index}|{event.start}|{label}".encode()
         return int(hashlib.sha256(token).hexdigest()[:8], 16) / 0x100000000
@@ -323,6 +331,7 @@ def _affect(
         progress = fraction if progression == "linear" else min(1.0, fraction**2) if progression == "slow_start" else fraction**0.5 if progression == "fast_start" else None
         if progress is None:
             raise ValueError(f"unsupported bearing progression {progression!r}")
+        progress *= onset_multiplier
         affected.update(vib + temp)
         gain = float(p.get("vibration_gain", 0.20)) * progress * severity_scale
         tgain = float(p.get("temperature_gain", 0.08)) * progress * severity_scale
@@ -332,16 +341,16 @@ def _affect(
             signals[name] += 15 * tgain
     elif kind == "cavitation":
         for name in pick("vibration_mm_s", "spindle_vibration_mm_s"):
-            signals[name] += float(p.get("vibration_gain", 0.8)) * fraction * severity_scale
+            signals[name] += float(p.get("vibration_gain", 0.8)) * linear_progress * severity_scale
             affected.add(name)
         for name in pick("flow_l_min"):
-            signals[name] *= 1 - float(p.get("flow_loss", 0.12)) * fraction * severity_scale
+            signals[name] *= 1 - float(p.get("flow_loss", 0.12)) * linear_progress * severity_scale
             affected.add(name)
         for name in pick("pressure_bar", "coolant_pressure_bar"):
-            signals[name] *= 1 - float(p.get("pressure_loss", 0.10)) * fraction * severity_scale
+            signals[name] *= 1 - float(p.get("pressure_loss", 0.10)) * linear_progress * severity_scale
             affected.add(name)
         for name in pick("motor_current_a"):
-            signals[name] *= 1 + float(p.get("current_gain", 0.05)) * fraction * severity_scale
+            signals[name] *= 1 + float(p.get("current_gain", 0.05)) * linear_progress * severity_scale
             affected.add(name)
     elif kind == "air_leak":
         pressure_signals = pick("pressure_bar")
@@ -352,6 +361,7 @@ def _affect(
         progress = fraction if progression == "linear" else min(1.0, fraction**2) if progression == "slow_start" else fraction**0.5 if progression == "fast_start" else None
         if progress is None:
             raise ValueError(f"unsupported air_leak progression {progression!r}")
+        progress *= onset_multiplier
         pressure_loss = float(p.get("pressure_loss_fraction", 0.15))
         current_gain = float(p.get("current_gain", 0.20))
         if not 0 <= pressure_loss <= 1 or not 0 <= current_gain <= 1:
@@ -364,14 +374,14 @@ def _affect(
             affected.add(name)
     elif kind == "cooling_degradation":
         for name in pick("temperature_c", "oil_temperature_c", "discharge_temperature_c", "spindle_temperature_c"):
-            signals[name] += float(p.get("temperature_gain", 0.08)) * 35 * fraction * severity_scale
+            signals[name] += float(p.get("temperature_gain", 0.08)) * 35 * linear_progress * severity_scale
             affected.add(name)
     elif kind == "mechanical_overload":
         for name in pick("motor_current_a", "spindle_power_kw"):
-            signals[name] *= 1 + float(p.get("current_gain", 0.12)) * fraction * severity_scale
+            signals[name] *= 1 + float(p.get("current_gain", 0.12)) * linear_progress * severity_scale
             affected.add(name)
         for name in pick("vibration_mm_s"):
-            signals[name] *= 1 + float(p.get("vibration_gain", 0.20)) * fraction * severity_scale
+            signals[name] *= 1 + float(p.get("vibration_gain", 0.20)) * linear_progress * severity_scale
             affected.add(name)
     elif kind == "sensor_drift":
         names = [str(p["signal"])] if "signal" in p else list(signals)
@@ -379,7 +389,7 @@ def _affect(
             raise ValueError("sensor_drift references a signal absent from the target asset")
         for name in names:
             if name in signals:
-                signals[name] += float(p.get("rate_per_minute", 0.5)) * severity_scale * (seconds - event.start) / 60
+                signals[name] += float(p.get("rate_per_minute", 0.5)) * severity_scale * (seconds - event.start) / 60 * onset_multiplier
                 affected.add(name)
     elif kind == "sensor_bias":
         names = [str(p["signal"])] if "signal" in p else list(signals)
@@ -428,7 +438,7 @@ def _affect(
     elif kind == "regime_mismatch":
         targets = pick("load_pct", "spindle_power_kw", "motor_current_a", "feed_rate")
         for name in targets:
-            signals[name] *= 1 - (1 - float(p.get("load_multiplier", 0.7))) * severity_scale
+            signals[name] *= 1 - (1 - float(p.get("load_multiplier", 0.7))) * linear_progress * severity_scale
             affected.add(name)
     elif kind == "multivariate_novelty":
         # Each selected channel remains inside engineering bounds; the joint pattern is unusual.
@@ -460,7 +470,7 @@ def _affect(
                 affected.add(name)
     elif kind == "maintenance_activity":
         for name in pick("motor_current_a", "spindle_power_kw", "load_pct"):
-            signals[name] *= 1 - (1 - float(p.get("load_multiplier", 0.1))) * severity_scale
+            signals[name] *= 1 - (1 - float(p.get("load_multiplier", 0.1))) * linear_progress * severity_scale
             affected.add(name)
     return signals, affected, quality
 

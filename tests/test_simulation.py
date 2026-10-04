@@ -1316,6 +1316,47 @@ def test_air_leak_rejects_incompatible_assets_and_unbounded_effects():
         }), 19)
 
 
+def test_very_hard_progressive_fault_has_slow_onset_and_five_percent_peak():
+    from ot_lab.simulation import resolve_profiles
+
+    parameters = resolve_profiles({"anomalies": [{
+        "type": "bearing_degradation", "difficulty": "very_hard",
+        "parameters": {"vibration_gain": 0.20},
+    }]})["anomalies"][0]["parameters"]
+    event = Anomaly(
+        type="bearing_degradation", asset="CNC-01", start=0, duration=10,
+        severity=1.0, parameters=parameters,
+    )
+    at_midpoint, _, _ = _affect(
+        event, {"spindle_vibration_mm_s": 10.0}, 5.0, {}, "cnc", 5, 1,
+    )
+    at_end, _, _ = _affect(
+        event, {"spindle_vibration_mm_s": 10.0}, 10.0, {}, "cnc", 10, 1,
+    )
+    assert at_midpoint["spindle_vibration_mm_s"] == pytest.approx(10.025)
+    assert at_end["spindle_vibration_mm_s"] == pytest.approx(10.1)
+
+
+def test_progressive_fault_uses_actual_subsecond_event_duration():
+    event = Anomaly(
+        type="bearing_degradation", asset="CNC-01", start=0, duration=0.5,
+        severity=1.0, parameters={"vibration_gain": 0.20},
+    )
+    near_end, _, _ = _affect(
+        event, {"spindle_vibration_mm_s": 10.0}, 0.49, {}, "cnc", 1, 1,
+    )
+    assert near_end["spindle_vibration_mm_s"] == pytest.approx(10 * (1 + 0.20 * 0.98))
+
+
+@pytest.mark.parametrize("delay", [-0.1, 4.1, float("inf")])
+def test_progressive_fault_rejects_invalid_onset_delay_power(delay):
+    with pytest.raises(ValueError, match="onset_delay_power must be finite and within 0..4"):
+        Anomaly(
+            type="bearing_degradation", asset="CNC-01", start=0, duration=10,
+            parameters={"onset_delay_power": delay},
+        )
+
+
 def test_multivariate_novelty_stays_inside_declared_engineering_bounds():
     telemetry, _, _ = simulate(fixture_scenario("cnc", {
         "type": "multivariate_novelty", "asset": "ASSET-01", "start": 5,
