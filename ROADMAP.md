@@ -30,7 +30,8 @@ Current publication state (2026-10-04): latest public software release is v0.3.1
 
 ## Release and governance
 
-- [ ] Sign software tags and dataset manifests with a verifiable authorized identity. Software tag v0.3.1 and dataset tags through v0.5.0 remain unsigned; the configured local SSH key rejected its passphrase. Evaluate keyless Sigstore/GitHub OIDC signing as an alternative without creating a new persistent private key.
+- [x] Prepare keyless Sigstore/GitHub OIDC signing for new software/dataset tags and future release assets, including dataset manifests. The manual tag workflow refuses existing tags and verifies the signer identity before pushing; the release workflow signs and self-verifies published assets. This does not sign an already-created tag or rewrite historical releases.
+- [ ] Exercise both signing workflows with an authorized future release, then verify the public Rekor-backed evidence independently. Historical software tag v0.3.1 and dataset releases through v0.5.0 remain unsigned. The local key issue is avoided without creating a persistent private key; see [RELEASE_SIGNING.md](RELEASE_SIGNING.md).
 - [x] Publish OT Irregularity Dataset v0.5.0 with a separate CC BY 4.0 notice, deterministic telemetry/label archives, release checksum, per-run and partition hashes, reproducible generation record, and verified public downloads. Earlier v0.2–v0.4 datasets remain available.
 - [x] Preserve model-agnostic behavior and public definitions; never tune scenario behavior in response to a particular detector's score. Core runtime dependencies contain no detector framework, an AST architecture test prevents importing common detector packages, external model evaluations use the command protocol, and detector scores have not been used to alter simulator effects or scenario distributions. The test is a dependency-boundary guard, not proof against every possible model-specific coupling.
 

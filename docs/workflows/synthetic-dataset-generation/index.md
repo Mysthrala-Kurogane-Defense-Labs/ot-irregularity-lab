@@ -1,6 +1,7 @@
 # Synthetic dataset generation records
 
-- 2026-10-04 — [Training v0.6 release candidate](runs/2026-10-04-training-v0.6-3000-candidate.md): generated and fully hashed 3,000 runs with all 16 event families, randomized VFD pump profiles, separate labels, and release-generated checksums; not publicly released.
+- 2026-10-04 — [Training v0.6 release candidates](runs/2026-10-04-training-v0.6-3000-candidate.md): superseded an earlier candidate after fixing resumable partition coverage; regenerated, hashed, replayed, packaged, and verified 3,000 runs, with the corrected candidate still local and unpublished.
+- 2026-10-04 — [Keyless Sigstore signing](runs/2026-10-04-keyless-signing.md): prepared new-tag and release-asset workflows; live OIDC signing remains pending a future authorized release.
 - 2026-10-04 — [Randomized pump profile suites](runs/2026-10-04-randomized-pump-profile-suites.md): per-asset process model sampling, training manifest profile counts, hidden challenge profile variation, and an asset-profile mutation regression fix.
 - 2026-10-04 — [Centrifugal pump VFD profile](runs/2026-10-04-centrifugal-vfd-profile.md): optional affinity-law process profile, scenario example, deterministic replay and physical-relationship checks.
 - 2026-10-04 — [MetroPT analysis QA and rail APU profile v1.1](runs/2026-10-04-metropt-analysis-qa-profile-v1.1.md): expanded aggregate source-quality accounting; documented stopped/offloaded/startup current mapping with a versioned illustrative process profile and replay verification.
