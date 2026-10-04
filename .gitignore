@@ -7,4 +7,5 @@ runs/
 !docs/workflows/**/runs/**/*.md
 datasets/
 dist/
+releases/
 .docker-smoke/

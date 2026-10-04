@@ -2,7 +2,7 @@
 
 OT Irregularity Lab v0.2.0 delivers a randomized suite and one public 1,000-run training dataset. This roadmap records remaining work from the broader platform vision. Items here are not implemented unless their status is explicitly changed in a later release.
 
-- [x] Add a data-informed compressor air-leak family and versioned randomized training/challenge profiles. A 3,000-run sizing draw contains 272 air leaks, including 44 in test, across all 16 event families; replay is exact. The suite now declares a per-partition minimum family coverage rule; the generated artifact must be regenerated and class balance reviewed before release. See [the validation record](docs/workflows/synthetic-dataset-generation/runs/2026-10-04-training-v0.5-distribution-validation.md).
+- [x] Add a data-informed compressor air-leak family and versioned randomized training/challenge profiles. A 3,000-run release candidate contains 393 air leaks (222/87/84 across train/validation/test) and all 16 event families; replay and separate artifact hashes pass. A public package is prepared under CC BY 4.0. See [the 3,000-run generation record](docs/workflows/synthetic-dataset-generation/runs/2026-10-04-training-v0.5-3000.md).
 
 ## Dataset and simulator
 
