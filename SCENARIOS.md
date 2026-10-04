@@ -35,6 +35,19 @@ The initial implementation applies deterministic effects for each defined type; 
 
 For `missing_telemetry`, use `loss_pct` with optional `signal`, `signals`, or a deterministic tag-selection policy. `tag_selection` accepts `all` (default), `single`, or `multiple`; `tag_count` sets the number selected for `multiple`. Selection is stable for the same seed/event/sample. `single_signal_loss` accepts `signal` or `signals`; otherwise it selects one tag. Unknown tags and impossible counts fail validation during simulation. For a full asset communication outage, use `asset_communication_loss`.
 
+All three communication-loss types (`missing_telemetry`, `single_signal_loss`, and `asset_communication_loss`) use `loss_pct` as the per-sample base probability, multiplied by event `severity` (0..1). Thus `loss_pct: 40` and `severity: 0.5` yields a 20% expected loss rate on the selected tags. `asset_communication_loss` defaults to every tag; it can be scoped with `signal`, `signals`, or `tag_selection`. `tag_selection: weighted` chooses one tag deterministically for a given run seed and event from `tag_weights`, whose values are non-negative weights (omitted tags have weight zero):
+
+```yaml
+parameters:
+  loss_pct: 40
+  tag_selection: weighted
+  tag_weights:
+    motor_current_a: 3
+    pressure_bar: 1
+```
+
+Weights control which tag is selected, while `loss_pct` controls how often that tag is omitted. The selection seed is independent of the sample index, so the same tag remains selected throughout the event. The per-sample loss mask is deterministic for a run seed, event, tag, and sample timestamp.
+
 ```yaml
 anomalies:
   - type: missing_telemetry

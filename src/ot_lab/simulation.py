@@ -305,8 +305,8 @@ def _affect(
     kind = event.type
     fraction = min(1.0, max(0.0, (seconds - event.start) / max(event.duration, 1)))
     p = event.parameters
-    # Severity scales configured continuous magnitudes and probabilities.
-    # Full-severity outages retain their categorical behavior.
+    # Severity scales configured continuous magnitudes. Communication loss has
+    # a separate base probability and selection policy so both can be calibrated.
     severity_scale = float(np.clip(event.severity, 0.0, 1.0))
     def draw_for(signal: str, label: str) -> float:
         token = f"{run_seed}|{event.asset}|{signal}|{sample_index}|{event.start}|{label}".encode()
@@ -411,39 +411,13 @@ def _affect(
             quality = "UNCERTAIN"
     elif kind == "single_signal_loss":
         names = _select_loss_signals(signals, p, run_seed, event, sample_index, force_single=True)
-        if any(name not in signals for name in names):
-            raise ValueError("single_signal_loss references a signal absent from the target asset")
-        loss_pct = float(p.get("loss_pct", 100))
-        if not 0 <= loss_pct <= 100:
-            raise ValueError("loss_pct must be within 0..100")
-        for name in names:
-            if draw_for(name, "single-signal-loss") < loss_pct * severity_scale / 100:
-                signals.pop(name, None)
-                affected.add(name)
+        _apply_telemetry_loss(signals, names, p, severity_scale, draw_for, "single-signal-loss", affected)
     elif kind == "asset_communication_loss":
-        loss_pct = float(p.get("loss_pct", 100))
-        if not 0 <= loss_pct <= 100:
-            raise ValueError("loss_pct must be within 0..100")
-        for name in list(signals):
-            if draw_for(name, "asset-communication-loss") < loss_pct * severity_scale / 100:
-                signals.pop(name, None)
-                affected.add(name)
+        names = _select_loss_signals(signals, p, run_seed, event, sample_index)
+        _apply_telemetry_loss(signals, names, p, severity_scale, draw_for, "asset-communication-loss", affected)
     elif kind == "missing_telemetry":
-        loss_pct = float(p.get("loss_pct", 100 if kind == "asset_communication_loss" else 25))
-        if not 0 <= loss_pct <= 100:
-            raise ValueError("loss_pct must be within 0..100")
-        loss_pct *= severity_scale
         candidates = _select_loss_signals(signals, p, run_seed, event, sample_index)
-        if loss_pct >= 100:
-            affected.update(candidates)
-            for name in candidates:
-                signals.pop(name, None)
-        else:
-            for name in candidates:
-                # Stable hashed selection per timestamp, no hidden state or extra RNG consumption.
-                if draw_for(name, "missing-telemetry") < loss_pct / 100:
-                    affected.add(name)
-                    signals.pop(name)
+        _apply_telemetry_loss(signals, candidates, p, severity_scale, draw_for, "missing-telemetry", affected)
     elif kind == "quality_degradation":
         if draw_for("__asset__", "quality-degradation") < severity_scale:
             quality = "BAD"
@@ -503,8 +477,23 @@ def _select_loss_signals(
         names = list(dict.fromkeys(raw))
     else:
         mode = "single" if force_single else str(parameters.get("tag_selection", "all"))
+        if mode == "weighted":
+            weights = parameters.get("tag_weights")
+            if not isinstance(weights, dict) or not weights:
+                raise ValueError("weighted tag_selection requires a non-empty tag_weights mapping")
+            unknown_weights = set(weights) - set(available)
+            if unknown_weights:
+                raise ValueError(f"tag_weights references unknown signals: {', '.join(sorted(unknown_weights))}")
+            numeric_weights = {name: float(weights.get(name, 0.0)) for name in available}
+            if any(not np.isfinite(weight) or weight < 0 for weight in numeric_weights.values()) or sum(numeric_weights.values()) <= 0:
+                raise ValueError("tag_weights must contain finite, non-negative values with a positive total")
+            token = f"{run_seed}|{event.asset}|{event.start}|tag-selection".encode()
+            rng = np.random.default_rng(int(hashlib.sha256(token).hexdigest()[:16], 16))
+            chosen = str(rng.choice(available, p=np.asarray(list(numeric_weights.values())) / sum(numeric_weights.values())))
+            names = [chosen]
+            return names
         if mode not in {"all", "single", "multiple"}:
-            raise ValueError("tag_selection must be all, single, or multiple")
+            raise ValueError("tag_selection must be all, single, multiple, or weighted")
         if mode == "all":
             names = available
         else:
@@ -520,6 +509,23 @@ def _select_loss_signals(
     if unknown:
         raise ValueError(f"loss scenario references unknown signals: {', '.join(sorted(unknown))}")
     return names
+
+
+def _apply_telemetry_loss(
+    signals: dict[str, float], names: list[str], parameters: dict[str, Any], severity: float,
+    draw_for: Any, label: str, affected: set[str],
+) -> None:
+    """Drop selected observations at configured probability times event severity."""
+    loss_pct = float(parameters.get("loss_pct", 100 if label != "missing-telemetry" else 25))
+    if not 0 <= loss_pct <= 100:
+        raise ValueError("loss_pct must be within 0..100")
+    probability = loss_pct * severity / 100
+    for name in names:
+        # Hash-derived draws make loss stable under replay and independent of
+        # iteration order or unrelated RNG consumption.
+        if draw_for(name, label) < probability:
+            signals.pop(name, None)
+            affected.add(name)
 
 
 def simulate(scenario: Scenario, seed: int) -> tuple[pl.DataFrame, dict[str, Any], dict[str, Any]]:

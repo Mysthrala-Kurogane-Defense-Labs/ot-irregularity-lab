@@ -1060,6 +1060,32 @@ def test_discrete_effect_severity_scales_effect_frequency(kind):
     assert observed[-1] > observed[1] > 0
 
 
+@pytest.mark.parametrize(("kind", "parameters"), [
+    ("missing_telemetry", {"loss_pct": 40}),
+    ("single_signal_loss", {"loss_pct": 40, "signal": "tag_0"}),
+    ("asset_communication_loss", {"loss_pct": 40}),
+])
+def test_communication_loss_uses_configured_base_rate_times_severity(kind, parameters):
+    observed = []
+    for severity in (0.25, 0.5, 1.0):
+        event = Anomaly(type=kind, asset="P-1", start=0, duration=10,
+                        severity=severity, parameters=parameters)
+        lost = 0
+        expected = 0
+        for sample_index in range(4000):
+            signals = {f"tag_{index}": float(index) for index in range(5)}
+            row, _affected, _quality = _affect(
+                event, signals, 1, {"process": ProcessState(temperature=20)},
+                "pump", sample_index, 555,
+            )
+            expected += 1 if kind == "single_signal_loss" else 5
+            lost += (1 if "tag_0" not in row else 0) if kind == "single_signal_loss" else 5 - len(row)
+        observed.append(lost / expected)
+
+    assert observed == sorted(observed)
+    assert observed == pytest.approx([0.10, 0.20, 0.40], abs=0.025)
+
+
 @pytest.mark.parametrize(("severity", "expected"), [(0.0, 20.0), (0.5, 15.0), (1.0, 10.0)])
 def test_sensor_stuck_severity_scales_blend_with_held_value(severity, expected):
     event = Anomaly(
@@ -1104,13 +1130,39 @@ def test_missing_telemetry_supports_configurable_tag_selection(selection, count)
 
 
 def test_loss_selection_rejects_unknown_and_impossible_tag_counts():
-    for parameters in ({"signal": "not_a_tag"}, {"tag_selection": "multiple", "tag_count": 99}):
+    for parameters in (
+        {"signal": "not_a_tag"},
+        {"tag_selection": "multiple", "tag_count": 99},
+        {"tag_selection": "weighted", "tag_weights": {"not_a_tag": 1}},
+    ):
         scenario = Scenario.model_validate({**fixture_scenario().model_dump(), "anomalies": [{
             "type": "missing_telemetry", "asset": "ASSET-01", "start": 5,
             "duration": 5, "parameters": parameters,
         }]})
-        with pytest.raises(ValueError, match="unknown signals|tag_count"):
+        with pytest.raises(ValueError, match="unknown signals|tag_count|tag_weights"):
             simulate(scenario, 2)
+    with pytest.raises(ValueError, match="tag_weights"):
+        Anomaly(type="missing_telemetry", asset="P-1", start=0, duration=1,
+                parameters={"tag_selection": "weighted", "tag_weights": {"motor_current_a": -1}})
+
+
+def test_weighted_missing_telemetry_tag_selection_is_seeded_and_respects_weights():
+    from ot_lab.simulation import _select_loss_signals
+
+    parameters = {"tag_selection": "weighted", "tag_weights": {"motor_current_a": 9, "pressure_bar": 1}}
+    selected = []
+    for seed in range(100):
+        event = Anomaly(type="missing_telemetry", asset="P-1", start=5, duration=10, parameters=parameters)
+        names = _select_loss_signals(
+            {"motor_current_a": 1.0, "pressure_bar": 1.0}, parameters, seed, event, 0,
+        )
+        assert names == _select_loss_signals(
+            {"motor_current_a": 1.0, "pressure_bar": 1.0}, parameters, seed, event, 99,
+        )
+        selected.extend(names)
+
+    current_fraction = selected.count("motor_current_a") / len(selected)
+    assert current_fraction == pytest.approx(0.9, abs=0.1)
 
 
 @pytest.mark.parametrize("loss_pct", [5, 10, 25, 50, 100])

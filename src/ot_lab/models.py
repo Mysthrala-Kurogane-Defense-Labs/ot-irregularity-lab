@@ -27,10 +27,22 @@ class Anomaly(BaseModel):
     asset: str
     start: float = Field(ge=0, description="Start offset in seconds")
     duration: float = Field(gt=0, description="Duration in seconds")
-    parameters: dict[str, float | str | bool | list[str]] = Field(default_factory=dict)
+    parameters: dict[str, float | str | bool | list[str] | dict[str, float]] = Field(default_factory=dict)
     severity: float = Field(default=0.4, ge=0, le=1)
     difficulty: Literal["easy", "medium", "hard", "very_hard"] | None = None
     resolved_difficulty: dict[str, float | str] | None = None
+
+    @field_validator("parameters")
+    @classmethod
+    def validate_parameter_maps(cls, value: dict[str, Any]) -> dict[str, Any]:
+        weights = value.get("tag_weights")
+        if weights is not None and (
+            not isinstance(weights, dict)
+            or any(not isinstance(weight, (int, float)) or not float("-inf") < weight < float("inf") or weight < 0 for weight in weights.values())
+            or sum(weights.values()) <= 0
+        ):
+            raise ValueError("tag_weights must contain finite, non-negative values with a positive total")
+        return value
 
 
 class AssetSpec(BaseModel):
@@ -183,4 +195,4 @@ class GroundTruthEvent(BaseModel):
     end: datetime
     affected_signals: list[str]
     severity: float
-    parameters: dict[str, float | str | bool | list[str]] = Field(default_factory=dict)
+    parameters: dict[str, float | str | bool | list[str] | dict[str, float]] = Field(default_factory=dict)
