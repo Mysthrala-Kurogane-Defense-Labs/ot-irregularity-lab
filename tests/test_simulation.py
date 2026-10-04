@@ -11,7 +11,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from ot_lab.evaluation import _timestamp_scores, evaluate
+from ot_lab.evaluation import _event_detection_metrics, _timestamp_scores, evaluate
 from ot_lab.models import Anomaly, AssetSpec, Scenario
 from ot_lab.process import ProcessState, regime_at, simulate_step
 from ot_lab.simulation import (
@@ -172,6 +172,24 @@ def test_fragmented_alerts_must_individually_meet_event_coverage_threshold(tmp_p
     assert result["event_detection_rate"] == 0
     assert result["true_positive_alert_episodes"] == 0
     assert result["false_positive_alert_episodes"] == 2
+
+
+def test_alert_merge_gap_does_not_count_gap_as_event_coverage():
+    event_start = datetime(2024, 1, 1, tzinfo=UTC)
+    event_end = event_start + timedelta(seconds=100)
+    event = {"event_id": "gap-coverage", "asset_id": "ASSET-01", "type": "sensor_bias",
+             "start": event_start.isoformat(), "end": event_end.isoformat(),
+             "observed_start": event_start.isoformat(), "observed_end": event_end.isoformat()}
+    predictions = pl.DataFrame([
+        {"asset_id": "ASSET-01", "window_start": event_start.isoformat(),
+         "window_end": (event_start + timedelta(seconds=4)).isoformat(), "irregularity_score": 0.9},
+        {"asset_id": "ASSET-01", "window_start": (event_start + timedelta(seconds=6)).isoformat(),
+         "window_end": (event_start + timedelta(seconds=10)).isoformat(), "irregularity_score": 0.9},
+    ])
+    result = _event_detection_metrics([event], predictions, 0.5, 0.1, 1.0, 2.0)
+    assert result["alert_episode_count"] == 1
+    assert result["events"][0]["coverage"] == pytest.approx(0.08)
+    assert result["event_detection_rate"] == 0
 
 
 def test_one_alert_episode_cannot_claim_multiple_ground_truth_events(tmp_path):
@@ -945,6 +963,29 @@ def test_training_v03_distribution_samples_compressor_air_leaks():
             assert all(a["start"] + a["duration"] <= b["start"] for a, b in pairwise(asset_events))
 
 
+def test_first_randomized_event_uses_its_sampled_start_when_the_slot_is_free():
+    import yaml
+
+    suite = yaml.safe_load(Path("suites/training-v0.3.yaml").read_text(encoding="utf-8"))
+    generation = dict(suite["generation"])
+    template = dict(next(item for item in generation["anomaly_templates"] if item["type"] == "air_leak"))
+    template.update({"start_fraction": {"min": 0.3, "max": 0.3},
+                     "duration_fraction": {"min": 0.1, "max": 0.1},
+                     "severity": {"min": 0.5, "max": 0.5}})
+    generation.update({"anomaly_probability": 1.0, "anomaly_count": {"min": 1, "max": 1},
+                       "anomaly_templates": [template], "asset_profiles": []})
+    base = {**suite["scenario"], "assets": next(
+        profile["assets"] for profile in suite["generation"]["asset_profiles"]
+        if profile["profile_id"] == "compressor-single"
+    )}
+    for seed in range(50):
+        sampled = _generate_suite_scenario(
+            base, generation, np.random.default_rng(seed), f"placement-{seed}"
+        )
+        assert len(sampled["anomalies"]) == 1
+        assert sampled["anomalies"][0]["start"] == round(sampled["duration_s"] * 0.3)
+
+
 def test_challenge_v02_can_generate_ephemeral_compressor_air_leak(tmp_path):
     import yaml
 
@@ -1072,7 +1113,8 @@ def test_randomized_training_dataset_has_mixed_faults_and_auditable_partitions(t
         assert all(event["affected_signals"] == [] for event in truth["events"] if event["severity"] == 0)
         assert all(
             event["affected_signals"]
-            or (event["type"] == "missing_telemetry" and event["parameters"].get("loss_pct", 0) < 100)
+            or (event["type"] in {"missing_telemetry", "single_signal_loss"}
+                and event["parameters"].get("loss_pct", 0) < 100)
             for event in truth["events"] if event["severity"] > 0
         )
         assert truth["ground_truth_schema_version"] == "1.1.0"

@@ -199,8 +199,16 @@ def _generate_suite_scenario(base: dict[str, Any], generation: dict[str, Any], r
                 }
                 if any(isinstance(value, dict) for value in parameters.values()):
                     raise ValueError(f"unresolved parameter specification in template {request['type']}")
-                ordered_starts = sorted(start_options)
-                rng.shuffle(ordered_starts)
+                desired_fits = any(
+                    gap_start <= request["desired_start"] <= gap_end - request["duration"]
+                    for gap_start, gap_end in gaps
+                )
+                preferred_start = request["desired_start"] if desired_fits else min(
+                    start_options, key=lambda start: (abs(start - request["desired_start"]), start)
+                )
+                fallback_starts = sorted(start_options - {preferred_start})
+                rng.shuffle(fallback_starts)
+                ordered_starts = [preferred_start, *fallback_starts]
                 for event_start in ordered_starts:
                     placed.append({
                         "type": request["type"], "asset": asset["asset_id"], "start": event_start,
