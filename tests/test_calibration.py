@@ -69,6 +69,9 @@ def test_metropt_analysis_reports_bad_rows_and_digital_values(tmp_path):
         "nonbinary_COMP_rows": 1,
         "nonbinary_load_valve_rows": 0,
     }
+    report = analyze_metropt(source)
+    assert report["digital_state_combinations"]["COMP=0.5,DV=1"]["rows"] == 1
+    assert report["digital_state_combinations"]["COMP=0,DV=1"]["rows"] == 2
 
 
 def test_metropt_analysis_rejects_missing_sensor_columns(tmp_path):

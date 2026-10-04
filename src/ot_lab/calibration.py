@@ -104,7 +104,7 @@ def analyze_metropt(path: Path) -> dict[str, Any]:
         (pl.col("motor_current_a") >= 8.5).mean().alias("fraction_current_at_least_8p5_a"),
     )
     for row in state_groups.iter_rows(named=True):
-        state_key = f"COMP={int(row['compressor_valve'])},DV={int(row['load_valve'])}"
+        state_key = f"COMP={row['compressor_valve']:g},DV={row['load_valve']:g}"
         digital_state_stats[state_key] = {
             key: (round(value, 6) if isinstance(value, float) else value)
             for key, value in row.items()
