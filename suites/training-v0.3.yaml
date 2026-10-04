@@ -1,0 +1,225 @@
+suite_id: ot-irregularity-training
+suite_version: 0.3.0
+data_license: CC-BY-4.0
+description: >-
+  Mixed normal and fault-injected OT telemetry. Every run gets an independent seed;
+  operating conditions, asset mixes, event families, onset, duration and severity
+  are sampled from the declared distributions below.
+partitions:
+  train: 0.70
+  validation: 0.15
+  test: 0.15
+scenario:
+  scenario_id: randomized-ot-plant
+  scenario_version: 3.0.0
+  run_id: generated
+  duration_s: 300
+  sampling_interval_ms: 1000
+  ambient_temperature_c: 22
+  assets:
+    - asset_id: CNC-01
+      asset_class: cnc
+      regimes: &supported_regimes ["OFF", IDLE, WARMUP, LOW_LOAD, NORMAL_LOAD, HIGH_LOAD, COOLDOWN, MAINTENANCE]
+generation:
+  anomaly_probability: 0.65
+  anomaly_count: {min: 1, max: 2}
+  # Guarantee at least this many air-leak runs within each generated partition.
+  # Indexing is partition-local; each run still gets its own independent seed.
+  coverage_by_partition: {air_leak: 50}
+  vary:
+    duration_s: {min: 300, max: 600}
+    sampling_interval_ms: {choices: [500, 1000]}
+    sampling_jitter_ms: {min: 0, max: 30}
+    ambient_temperature_c: {min: 15, max: 32}
+    ambient_temperature_drift_c: {min: -4.0, max: 4.0}
+    expose_operating_regime: {choices: [true, false]}
+  asset_profiles:
+    - profile_id: cnc-single
+      weight: 1
+      assets: [{asset_id: CNC-01, asset_class: cnc, regimes: *supported_regimes}]
+    - profile_id: pump-single
+      weight: 1
+      assets: [{asset_id: PUMP-01, asset_class: pump, regimes: *supported_regimes}]
+    - profile_id: compressor-single
+      weight: 1
+      assets: [{asset_id: COMPRESSOR-01, asset_class: compressor, regimes: *supported_regimes}]
+    - profile_id: conveyor-single
+      weight: 1
+      assets: [{asset_id: CONVEYOR-01, asset_class: conveyor, regimes: *supported_regimes}]
+    - profile_id: machining-cell
+      weight: 1
+      assets:
+        - {asset_id: CNC-01, asset_class: cnc, regimes: *supported_regimes}
+        - {asset_id: PUMP-01, asset_class: pump, regimes: *supported_regimes}
+    - profile_id: mixed-plant
+      weight: 2
+      assets:
+        - {asset_id: CNC-01, asset_class: cnc, regimes: *supported_regimes}
+        - {asset_id: PUMP-01, asset_class: pump, regimes: *supported_regimes}
+        - {asset_id: COMPRESSOR-01, asset_class: compressor, regimes: *supported_regimes}
+        - {asset_id: CONVEYOR-01, asset_class: conveyor, regimes: *supported_regimes}
+    - profile_id: compressor-cell
+      weight: 2
+      assets:
+        - {asset_id: COMPRESSOR-01, asset_class: compressor, regimes: *supported_regimes}
+        - {asset_id: PUMP-01, asset_class: pump, regimes: *supported_regimes}
+    - profile_id: compressor-mixed-plant
+      weight: 3
+      assets:
+        - {asset_id: CNC-01, asset_class: cnc, regimes: *supported_regimes}
+        - {asset_id: PUMP-01, asset_class: pump, regimes: *supported_regimes}
+        - {asset_id: COMPRESSOR-01, asset_class: compressor, regimes: *supported_regimes}
+        - {asset_id: CONVEYOR-01, asset_class: conveyor, regimes: *supported_regimes}
+  regime_profiles:
+    - profile_id: standard-shift
+      weight: 3
+      shift_pattern: [LOW_LOAD, NORMAL_LOAD, HIGH_LOAD, NORMAL_LOAD]
+    - profile_id: variable-production
+      weight: 2
+      shift_pattern: [IDLE, LOW_LOAD, HIGH_LOAD, LOW_LOAD, NORMAL_LOAD]
+    - profile_id: startup-maintenance-shutdown
+      weight: 1
+      shift_pattern: [NORMAL_LOAD, HIGH_LOAD, MAINTENANCE, NORMAL_LOAD]
+    - profile_id: steady-heavy-production
+      weight: 1
+      shift_pattern: [HIGH_LOAD, HIGH_LOAD, NORMAL_LOAD]
+    - profile_id: planned-maintenance
+      weight: 1
+      shift_pattern: [NORMAL_LOAD, HIGH_LOAD, MAINTENANCE, IDLE, NORMAL_LOAD]
+    - profile_id: production-stop
+      weight: 1
+      shift_pattern: [LOW_LOAD, NORMAL_LOAD, "OFF", IDLE, NORMAL_LOAD]
+  anomaly_templates:
+    - type: air_leak
+      weight: 2.0
+      asset_classes: [compressor]
+      start_fraction: {min: 0.10, max: 0.70}
+      duration_fraction: {min: 0.05, max: 0.25}
+      severity: {min: 0.10, max: 0.90}
+      parameters:
+        pressure_loss_fraction: {min: 0.04, max: 0.35}
+        current_gain: {min: 0.05, max: 0.40}
+        progression: {choices: [linear, slow_start, fast_start]}
+    - type: bearing_degradation
+      weight: 1.2
+      asset_classes: [cnc, pump, compressor, conveyor]
+      start_fraction: {min: 0.10, max: 0.75}
+      duration_fraction: {min: 0.08, max: 0.30}
+      severity: {min: 0.15, max: 0.90}
+      parameters:
+        vibration_gain: {min: 0.04, max: 0.35}
+        temperature_gain: {min: 0.02, max: 0.15}
+        progression: {choices: [linear, slow_start, fast_start]}
+    - type: cavitation
+      weight: 1
+      asset_classes: [pump, cnc]
+      start_fraction: {min: 0.08, max: 0.75}
+      duration_fraction: {min: 0.05, max: 0.25}
+      severity: {min: 0.15, max: 0.90}
+      parameters:
+        vibration_gain: {min: 0.2, max: 1.5}
+        flow_loss: {min: 0.03, max: 0.30}
+        pressure_loss: {min: 0.02, max: 0.25}
+        current_gain: {min: 0.02, max: 0.12}
+    - type: cooling_degradation
+      weight: 1
+      asset_classes: [cnc, pump, compressor, conveyor]
+      start_fraction: {min: 0.10, max: 0.70}
+      duration_fraction: {min: 0.10, max: 0.35}
+      severity: {min: 0.10, max: 0.85}
+      parameters:
+        temperature_gain: {min: 0.02, max: 0.25}
+    - type: mechanical_overload
+      weight: 1
+      asset_classes: [cnc, pump, compressor, conveyor]
+      start_fraction: {min: 0.10, max: 0.80}
+      duration_fraction: {min: 0.03, max: 0.20}
+      severity: {min: 0.10, max: 0.90}
+      parameters:
+        current_gain: {min: 0.03, max: 0.35}
+        vibration_gain: {min: 0.04, max: 0.40}
+    - type: sensor_drift
+      weight: 1
+      asset_classes: [cnc, pump, compressor, conveyor]
+      start_fraction: {min: 0.15, max: 0.75}
+      duration_fraction: {min: 0.10, max: 0.40}
+      severity: {min: 0.10, max: 0.80}
+      parameters:
+        signal: {signal_class: any}
+        rate_per_minute: {min: 0.05, max: 2.0}
+    - type: sudden_spike
+      weight: 0.8
+      asset_classes: [cnc, pump, compressor, conveyor]
+      start_fraction: {min: 0.10, max: 0.85}
+      duration_fraction: {min: 0.01, max: 0.05}
+      severity: {min: 0.15, max: 0.95}
+      parameters:
+        signal: {signal_class: vibration}
+        magnitude: {min: 0.2, max: 2.5}
+    - type: sensor_stuck
+      weight: 0.8
+      asset_classes: [cnc, pump, compressor, conveyor]
+      start_fraction: {min: 0.10, max: 0.75}
+      duration_fraction: {min: 0.05, max: 0.25}
+      severity: {min: 0.10, max: 0.90}
+      parameters:
+        signal: {signal_class: any}
+    - type: sensor_bias
+      weight: 1
+      asset_classes: [cnc, pump, compressor, conveyor]
+      start_fraction: {min: 0.10, max: 0.80}
+      duration_fraction: {min: 0.05, max: 0.30}
+      severity: {min: 0.10, max: 0.85}
+      parameters:
+        signal: {signal_class: any}
+        bias: {min: 0.2, max: 8.0}
+    - type: missing_telemetry
+      weight: 1
+      asset_classes: [cnc, pump, compressor, conveyor]
+      start_fraction: {min: 0.10, max: 0.80}
+      duration_fraction: {min: 0.03, max: 0.25}
+      severity: {min: 0.10, max: 0.95}
+      parameters:
+        loss_pct: {choices: [5, 10, 25, 50, 100]}
+    - type: single_signal_loss
+      weight: 0.8
+      asset_classes: [cnc, pump, compressor, conveyor]
+      start_fraction: {min: 0.10, max: 0.80}
+      duration_fraction: {min: 0.05, max: 0.30}
+      severity: {min: 0.10, max: 0.90}
+      parameters:
+        signal: {signal_class: any}
+    - type: asset_communication_loss
+      weight: 0.7
+      asset_classes: [cnc, pump, compressor, conveyor]
+      start_fraction: {min: 0.10, max: 0.80}
+      duration_fraction: {min: 0.02, max: 0.15}
+      severity: {min: 0.20, max: 1.0}
+    - type: quality_degradation
+      weight: 0.7
+      asset_classes: [cnc, pump, compressor, conveyor]
+      start_fraction: {min: 0.10, max: 0.80}
+      duration_fraction: {min: 0.03, max: 0.20}
+      severity: {min: 0.10, max: 0.80}
+    - type: regime_mismatch
+      weight: 0.8
+      asset_classes: [cnc, pump, compressor, conveyor]
+      start_fraction: {min: 0.10, max: 0.80}
+      duration_fraction: {min: 0.03, max: 0.20}
+      severity: {min: 0.10, max: 0.80}
+      parameters:
+        load_multiplier: {min: 0.45, max: 0.90}
+    - type: multivariate_novelty
+      weight: 0.8
+      asset_classes: [cnc, pump, compressor, conveyor]
+      start_fraction: {min: 0.10, max: 0.75}
+      duration_fraction: {min: 0.05, max: 0.25}
+      severity: {min: 0.10, max: 0.80}
+    - type: maintenance_activity
+      weight: 0.6
+      asset_classes: [cnc, pump, compressor, conveyor]
+      start_fraction: {min: 0.08, max: 0.80}
+      duration_fraction: {min: 0.02, max: 0.12}
+      severity: {min: 0.10, max: 0.70}
+      parameters:
+        load_multiplier: {min: 0.05, max: 0.30}
