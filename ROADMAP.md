@@ -2,6 +2,8 @@
 
 OT Irregularity Lab v0.2.0 delivers a randomized suite and one public 1,000-run training dataset. This roadmap records remaining work from the broader platform vision. Items here are not implemented unless their status is explicitly changed in a later release.
 
+Current publication state (2026-10-04): latest public software release is v0.3.1 and latest public dataset is v0.5.0. Simulator v0.6.0 and dataset v0.6.0 are local/PR release candidates, not public releases.
+
 - [x] Add a data-informed compressor air-leak family and versioned randomized training/challenge profiles. A 3,000-run release candidate contains 393 air leaks (222/87/84 across train/validation/test) and all 16 event families; replay and separate artifact hashes pass. A public package is prepared under CC BY 4.0. See [the 3,000-run generation record](docs/workflows/synthetic-dataset-generation/runs/2026-10-04-training-v0.5-3000.md).
 
 ## Dataset and simulator
@@ -30,7 +32,7 @@ OT Irregularity Lab v0.2.0 delivers a randomized suite and one public 1,000-run 
 
 - [ ] Sign software tags and dataset manifests with a verifiable authorized identity. Software tag v0.3.1 and dataset tags through v0.5.0 remain unsigned; the configured local SSH key rejected its passphrase. Evaluate keyless Sigstore/GitHub OIDC signing as an alternative without creating a new persistent private key.
 - [x] Publish OT Irregularity Dataset v0.5.0 with a separate CC BY 4.0 notice, deterministic telemetry/label archives, release checksum, per-run and partition hashes, reproducible generation record, and verified public downloads. Earlier v0.2–v0.4 datasets remain available.
-- [ ] Preserve model-agnostic behavior and public definitions; never tune scenario behavior in response to a particular detector's score.
+- [x] Preserve model-agnostic behavior and public definitions; never tune scenario behavior in response to a particular detector's score. Core runtime dependencies contain no detector framework, an AST architecture test prevents importing common detector packages, external model evaluations use the command protocol, and detector scores have not been used to alter simulator effects or scenario distributions. The test is a dependency-boundary guard, not proof against every possible model-specific coupling.
 
 ## Current evidence boundary
 
