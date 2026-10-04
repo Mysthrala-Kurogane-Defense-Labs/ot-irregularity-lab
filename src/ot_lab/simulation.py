@@ -210,7 +210,7 @@ def _generate_dataset_scenario(
     requested = generation.get("coverage_by_partition", {})
     forced = [
         str(event_type) for event_type, count in requested.items()
-        if dataset_index < min(int(count), max(1, dataset_count // 10))
+        if dataset_index < min(int(count), max(1, dataset_count // 10)) and int(count) > 0
     ]
     if not forced:
         return _generate_suite_scenario(base, generation, rng, run_id)
