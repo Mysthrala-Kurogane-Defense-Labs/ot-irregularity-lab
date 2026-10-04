@@ -28,10 +28,10 @@ OT Irregularity Lab v0.2.0 delivers a randomized suite and one public 1,000-run 
 
 ## Release and governance
 
-- [ ] Sign software tags and dataset manifests when an authorized signing key is available. Software and dataset tags through v0.3.1/v0.3.0 remain unsigned; the configured local SSH key rejected its passphrase. Revisit only when a usable authorized signing key is available.
+- [ ] Sign software tags and dataset manifests with a verifiable authorized identity. Software tag v0.3.1 and dataset tags through v0.5.0 remain unsigned; the configured local SSH key rejected its passphrase. Evaluate keyless Sigstore/GitHub OIDC signing as an alternative without creating a new persistent private key.
 - [x] Publish OT Irregularity Dataset v0.5.0 with a separate CC BY 4.0 notice, deterministic telemetry/label archives, release checksum, per-run and partition hashes, reproducible generation record, and verified public downloads. Earlier v0.2–v0.4 datasets remain available.
 - [ ] Preserve model-agnostic behavior and public definitions; never tune scenario behavior in response to a particular detector's score.
 
 ## Current evidence boundary
 
-The v0.3 dataset has 1,000 runs, 8,477,689 telemetry rows, and all 15 configured event families. This demonstrates generator and artifact coverage for the declared suite; it does not establish real industrial failure prevalence, calibrated physical realism, security certification, or detector performance in production.
+The v0.5 dataset has 3,000 runs, 31,114,700 telemetry rows, and all 16 configured event families. This demonstrates generator and artifact coverage for the declared suite; it does not establish real industrial failure prevalence, calibrated physical realism, security certification, or detector performance in production.
