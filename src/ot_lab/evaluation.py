@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import heapq
 import json
 from datetime import datetime, timedelta
 from html import escape
@@ -215,9 +216,9 @@ def _event_detection_metrics(
 
 
 def _timestamp_scores(events: list[dict[str, Any]], predictions: pl.DataFrame, telemetry: pl.DataFrame, metadata: dict[str, Any]) -> tuple[list[float], list[bool]]:
-    """Assign each expected asset sample the highest covering score and event label, including missing samples."""
+    """Assign scores and event labels in O((P + E + S) log(P + E)) time."""
     event_intervals = {
-        asset_id: [(_time(item.get("observed_start", item["start"])), _time(item.get("observed_end", item["end"]))) for item in events if item["asset_id"] == asset_id]
+        asset_id: sorted((_time(item.get("observed_start", item["start"])), _time(item.get("observed_end", item["end"]))) for item in events if item["asset_id"] == asset_id)
         for asset_id in {event["asset_id"] for event in events}
     }
     pred_intervals: dict[str, list[tuple[datetime, datetime, float]]] = {}
@@ -227,16 +228,37 @@ def _timestamp_scores(events: list[dict[str, Any]], predictions: pl.DataFrame, t
     cadence = int(metadata["sampling_interval_ms"])
     total_samples = int(float(metadata["duration_s"]) * 1000 / cadence)
     asset_ids = metadata.get("asset_ids") or telemetry.get_column("asset_id").unique().to_list()
-    samples = [
-        {"asset_id": asset_id, "timestamp": start + timedelta(milliseconds=index * cadence)}
-        for asset_id in asset_ids for index in range(total_samples)
-    ]
     scores: list[float] = []
     labels: list[bool] = []
-    for sample in samples:
-        timestamp, asset_id = sample["timestamp"], sample["asset_id"]
-        labels.append(any(start <= timestamp < end for start, end in event_intervals.get(asset_id, [])))
-        scores.append(max((score for start, end, score in pred_intervals.get(asset_id, []) if start <= timestamp < end), default=0.0))
+    for asset_id in asset_ids:
+        intervals = sorted(pred_intervals.get(asset_id, []), key=lambda interval: interval[0])
+        next_interval = 0
+        by_score: list[tuple[float, int]] = []
+        by_end: list[tuple[datetime, int]] = []
+        active = [False] * len(intervals)
+        asset_events = event_intervals.get(asset_id, [])
+        next_event = 0
+        event_ends: list[datetime] = []
+        for index in range(total_samples):
+            timestamp = start + timedelta(milliseconds=index * cadence)
+            while next_interval < len(intervals) and intervals[next_interval][0] <= timestamp:
+                _, interval_end, score = intervals[next_interval]
+                active[next_interval] = True
+                heapq.heappush(by_score, (-score, next_interval))
+                heapq.heappush(by_end, (interval_end, next_interval))
+                next_interval += 1
+            while by_end and by_end[0][0] <= timestamp:
+                _, expired_index = heapq.heappop(by_end)
+                active[expired_index] = False
+            while by_score and not active[by_score[0][1]]:
+                heapq.heappop(by_score)
+            while next_event < len(asset_events) and asset_events[next_event][0] <= timestamp:
+                heapq.heappush(event_ends, asset_events[next_event][1])
+                next_event += 1
+            while event_ends and event_ends[0] <= timestamp:
+                heapq.heappop(event_ends)
+            labels.append(bool(event_ends))
+            scores.append(-by_score[0][0] if by_score else 0.0)
     return scores, labels
 
 

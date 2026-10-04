@@ -429,6 +429,46 @@ def test_benchmark_class_imbalance_and_mixed_assets_use_half_open_intervals(tmp_
     assert not labels[timestamps.index(event_end_dt)]
 
 
+def test_timestamp_scoring_uses_highest_active_score_with_half_open_windows():
+    start = EPOCH
+    records = [
+        {"asset_id": "ASSET-01", "window_start": start.isoformat(),
+         "window_end": (start + timedelta(seconds=2)).isoformat(), "irregularity_score": 0.4},
+        {"asset_id": "ASSET-01", "window_start": start.isoformat(),
+         "window_end": (start + timedelta(seconds=4)).isoformat(), "irregularity_score": 0.9},
+        {"asset_id": "ASSET-01", "window_start": (start + timedelta(seconds=1)).isoformat(),
+         "window_end": (start + timedelta(seconds=3)).isoformat(), "irregularity_score": 0.8},
+    ]
+    predictions = pl.read_ndjson(io.BytesIO("".join(json.dumps(row) + "\n" for row in records).encode()))
+    metadata = {
+        "started_at": start.isoformat(), "duration_s": 4, "sampling_interval_ms": 1000,
+        "asset_ids": ["ASSET-01", "ASSET-02"],
+    }
+
+    scores, labels = _timestamp_scores([], predictions, pl.DataFrame(), metadata)
+
+    assert scores == [0.9, 0.9, 0.9, 0.9, 0.0, 0.0, 0.0, 0.0]
+    assert labels == [False] * 8
+
+
+def test_timestamp_scoring_labels_overlapping_events_with_half_open_windows():
+    start = EPOCH
+    events = [
+        {"asset_id": "ASSET-01", "start": (start + timedelta(seconds=offset)).isoformat(),
+         "end": (start + timedelta(seconds=offset + 2)).isoformat()}
+        for offset in (3, 0, 1, 4)
+    ]
+    metadata = {
+        "started_at": start.isoformat(), "duration_s": 8, "sampling_interval_ms": 1000,
+        "asset_ids": ["ASSET-01"],
+    }
+
+    scores, labels = _timestamp_scores(events, pl.DataFrame(), pl.DataFrame(), metadata)
+
+    assert scores == [0.0] * 8
+    assert labels == [True, True, True, True, True, True, False, False]
+
+
 def test_normal_only_benchmark_reports_pr_auc_as_undefined(tmp_path):
     run_dir = tmp_path / "normal-run"
     write_run(fixture_scenario(), 30, run_dir)

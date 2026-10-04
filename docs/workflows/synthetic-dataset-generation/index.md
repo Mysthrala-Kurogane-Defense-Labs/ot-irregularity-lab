@@ -16,3 +16,4 @@
 
 - 2026-10-04 — [Security review and remediations](runs/2026-10-04-security-review-and-remediations.md): scoped audit of all 12 source modules; fixed package-manifest path traversal and unescaped benchmark HTML, with Windows and WSL validation.
 - 2026-10-04 — [External model results with event metrics v2](runs/2026-10-04-external-model-evaluation-metrics-v2.md): corrected event precision to one-to-one alert-episode matching and rescored the same 120 archived Isolation Forest, LOF, and ECOD outputs; no detector was retrained or retuned.
+- 2026-10-04 — [Docker isolation and host evaluator review](runs/2026-10-04-isolation-and-evaluator-review.md): independent baseline and local container smoke found no container escape; fixed an O(P×S) host timestamp-scoring path and passed the full WSL suite.
