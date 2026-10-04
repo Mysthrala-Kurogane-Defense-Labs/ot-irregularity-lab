@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -216,13 +217,17 @@ def evaluate(ground_truth_path: Path, predictions_path: Path, output_dir: Path, 
     result["exposure_asset_hours"] = exposure_hours
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "metrics.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-    event_rows = "".join(f"<tr><td>{e['event_id']}</td><td>{e['asset_id']}</td><td>{e['type']}</td><td>{e['detected']}</td><td>{e['coverage']:.1%}</td></tr>" for e in result["events"])
+    event_rows = "".join(
+        f"<tr><td>{escape(str(e['event_id']))}</td><td>{escape(str(e['asset_id']))}</td>"
+        f"<td>{escape(str(e['type']))}</td><td>{e['detected']}</td><td>{e['coverage']:.1%}</td></tr>"
+        for e in result["events"]
+    )
     event_precision = f"{result['precision']:.3f}" if result["precision"] is not None else "n/a"
     event_recall = f"{result['recall']:.3f}" if result["recall"] is not None else "n/a"
     event_f1 = f"{result['f1']:.3f}" if result["f1"] is not None else "n/a"
     html = f"""<!doctype html><html lang="en"><meta charset="utf-8"><title>OT Irregularity Lab benchmark</title>
 <style>body{{font:16px system-ui;max-width:900px;margin:3rem auto;color:#16202a}}table{{border-collapse:collapse}}td,th{{padding:.6rem 1rem;border:1px solid #ccd}}</style>
-<h1>Benchmark report</h1><p>Run: {result['run_id']} | threshold {threshold:.3f} | overlap {overlap:.1%}</p>
+<h1>Benchmark report</h1><p>Run: {escape(str(result['run_id']))} | threshold {threshold:.3f} | overlap {overlap:.1%}</p>
 <ul><li>Precision: {event_precision}</li><li>Recall: {event_recall}</li><li>F1: {event_f1}</li>
 <li>PR-AUC: {result['pr_auc'] if result['pr_auc'] is not None else 'n/a'}</li><li>False positive windows: {result['false_positive_windows']}</li>
 <li>Event coverage: {result['mean_event_coverage'] if result['mean_event_coverage'] is not None else 'n/a'}</li></ul>

@@ -104,6 +104,40 @@ def test_event_benchmark_reports_detection_and_artifacts(tmp_path):
     assert (tmp_path / "report" / "report.html").exists()
 
 
+def test_benchmark_html_escapes_scenario_identifiers(tmp_path):
+    run_id = '<script>alert("run")</script>'
+    asset_id = '<img src=x onerror=alert("asset")>'
+    scenario = Scenario.model_validate({
+        "scenario_id": "html-escape",
+        "run_id": run_id,
+        "duration_s": 30,
+        "sampling_interval_ms": 1000,
+        "assets": [{"asset_id": asset_id, "asset_class": "cnc"}],
+        "anomalies": [{
+            "type": "bearing_degradation", "asset": asset_id, "start": 5,
+            "duration": 10, "parameters": {"vibration_gain": 0.2},
+        }],
+    })
+    run_dir = tmp_path / "run"
+    write_run(scenario, 7, run_dir)
+    truth = json.loads((run_dir / "ground_truth.json").read_text(encoding="utf-8"))
+    event = truth["events"][0]
+    predictions = tmp_path / "predictions.jsonl"
+    predictions.write_text(json.dumps({
+        "asset_id": asset_id,
+        "window_start": event["observed_start"],
+        "window_end": event["observed_end"],
+        "irregularity_score": 0.9,
+    }) + "\n", encoding="utf-8")
+
+    evaluate(run_dir / "ground_truth.json", predictions, tmp_path / "report", telemetry_path=run_dir / "telemetry.parquet")
+    report = (tmp_path / "report" / "report.html").read_text(encoding="utf-8")
+    assert "&lt;script&gt;alert(&quot;run&quot;)&lt;/script&gt;" in report
+    assert "&lt;img src=x onerror=alert(&quot;asset&quot;)&gt;" in report
+    assert run_id not in report
+    assert asset_id not in report
+
+
 @pytest.mark.parametrize(
     ("prediction_windows", "expected_recall", "expected_coverage", "expected_false_positives"),
     [
