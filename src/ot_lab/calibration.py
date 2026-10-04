@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import zipfile
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import polars as pl
 
 
@@ -113,5 +115,139 @@ def analyze_metropt(path: Path) -> dict[str, Any]:
 def write_metropt_analysis(input_path: Path, output_path: Path) -> Path:
     report = analyze_metropt(input_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    output_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
+    return output_path
+
+
+_HYDRAULIC_SENSORS = {
+    "PS1": ("pressure", "bar", 100), "PS2": ("pressure", "bar", 100),
+    "PS3": ("pressure", "bar", 100), "PS4": ("pressure", "bar", 100),
+    "PS5": ("pressure", "bar", 100), "PS6": ("pressure", "bar", 100),
+    "EPS1": ("motor_power", "W", 100),
+    "FS1": ("volume_flow", "l/min", 10), "FS2": ("volume_flow", "l/min", 10),
+    "TS1": ("temperature", "C", 1), "TS2": ("temperature", "C", 1),
+    "TS3": ("temperature", "C", 1), "TS4": ("temperature", "C", 1),
+    "VS1": ("vibration", "mm/s", 1), "CE": ("cooling_efficiency", "%", 1),
+    "CP": ("cooling_power", "kW", 1), "SE": ("efficiency_factor", "%", 1),
+}
+_HYDRAULIC_COMPONENTS = {
+    "cooler": {"column": 0, "levels": [100, 20, 3], "nominal_others": {1: 100, 2: 0, 3: 130, 4: 0}, "signals": ["TS1", "TS2", "TS3", "TS4", "CE", "CP", "EPS1", "FS1", "FS2"]},
+    "valve": {"column": 1, "levels": [100, 90, 80, 73], "nominal_others": {0: 100, 2: 0, 3: 130, 4: 0}, "signals": ["FS1", "FS2", "PS1", "PS2", "PS3", "PS4", "PS5", "PS6", "EPS1"]},
+    "internal_pump_leakage": {"column": 2, "levels": [0, 1, 2], "nominal_others": {0: 100, 1: 100, 3: 130, 4: 0}, "signals": ["FS1", "FS2", "PS1", "PS2", "PS3", "PS4", "PS5", "PS6", "EPS1", "VS1", "TS1", "TS2", "TS3", "TS4"]},
+    "accumulator": {"column": 3, "levels": [130, 115, 100, 90], "nominal_others": {0: 100, 1: 100, 2: 0, 4: 0}, "signals": ["FS1", "FS2", "PS1", "PS2", "PS3", "PS4", "PS5", "PS6", "EPS1"]},
+}
+
+
+def _quantiles(values: np.ndarray) -> dict[str, float]:
+    return {f"p{quantile:02d}": round(float(np.percentile(values, quantile)), 6) for quantile in (5, 50, 95)}
+
+
+def analyze_zema_hydraulic(path: Path) -> dict[str, Any]:
+    """Aggregate condition-conditioned cycle summaries from the official UCI ZIP.
+
+    The output retains source provenance and aggregate measurements only. It is
+    evidence for one hydraulic test rig, not a general pump model or failure prior.
+    """
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    digest = _sha256(path)
+    try:
+        with zipfile.ZipFile(path) as archive:
+            by_basename: dict[str, str] = {}
+            for name in archive.namelist():
+                basename = Path(name).name
+                if basename in {"profile.txt", "description.txt"} | {f"{sensor}.txt" for sensor in _HYDRAULIC_SENSORS}:
+                    if basename in by_basename:
+                        raise ValueError(f"hydraulic archive contains duplicate file name: {basename}")
+                    by_basename[basename] = name
+            required = {"profile.txt", *(f"{sensor}.txt" for sensor in _HYDRAULIC_SENSORS)}
+            missing = required - set(by_basename)
+            if missing:
+                raise ValueError(f"hydraulic archive is missing files: {', '.join(sorted(missing))}")
+            with archive.open(by_basename["profile.txt"]) as stream:
+                profile = np.loadtxt(stream, delimiter="\t", ndmin=2)
+            if profile.ndim != 2 or profile.shape[1] != 5 or profile.shape[0] == 0:
+                raise ValueError("hydraulic profile.txt must contain five label columns and at least one cycle")
+            if not np.isfinite(profile).all():
+                raise ValueError("hydraulic profile labels must be finite")
+
+            summaries: dict[str, dict[str, np.ndarray]] = {}
+            for sensor in _HYDRAULIC_SENSORS:
+                with archive.open(by_basename[f"{sensor}.txt"]) as stream:
+                    matrix = np.loadtxt(stream, delimiter="\t", ndmin=2)
+                if matrix.ndim != 2 or matrix.shape[0] != profile.shape[0] or matrix.shape[1] == 0:
+                    raise ValueError(f"{sensor}.txt rows must align with profile.txt and contain samples")
+                if not np.isfinite(matrix).all():
+                    raise ValueError(f"{sensor}.txt contains non-finite samples")
+                summaries[sensor] = {
+                    "cycle_mean": matrix.mean(axis=1),
+                    "within_cycle_sd": matrix.std(axis=1),
+                }
+    except zipfile.BadZipFile as exc:
+        raise ValueError("hydraulic input must be the official UCI ZIP archive") from exc
+
+    conditioned: dict[str, Any] = {}
+    for component, specification in _HYDRAULIC_COMPONENTS.items():
+        component_column = specification["column"]
+        all_counts = {
+            (str(int(level)) if float(level).is_integer() else str(level)): int(np.count_nonzero(profile[:, component_column] == level))
+            for level in sorted(set(profile[:, component_column].tolist()))
+        }
+        isolated_mask = np.ones(profile.shape[0], dtype=bool)
+        for column, level in specification["nominal_others"].items():
+            isolated_mask &= profile[:, column] == level
+        level_summaries: dict[str, Any] = {}
+        for level in specification["levels"]:
+            mask = isolated_mask & (profile[:, component_column] == level)
+            signal_summaries: dict[str, Any] = {}
+            if mask.any():
+                for sensor in specification["signals"]:
+                    signal_summaries[sensor] = {
+                        "cycle_mean": _quantiles(summaries[sensor]["cycle_mean"][mask]),
+                        "within_cycle_sd_p50": round(float(np.median(summaries[sensor]["within_cycle_sd"][mask])), 6),
+                    }
+            level_summaries[str(level)] = {"cycles": int(mask.sum()), "signals": signal_summaries}
+        conditioned[component] = {
+            "all_cycle_counts_by_label": all_counts,
+            "other_conditions_nominal_and_stable": True,
+            "levels": level_summaries,
+        }
+
+    return {
+        "analysis_version": "1.0.0",
+        "source": {
+            "dataset": "Condition monitoring of hydraulic systems (ZeMA hydraulic test rig)",
+            "publisher": "UCI Machine Learning Repository",
+            "doi": "10.24432/C5CW21",
+            "license": "CC BY 4.0",
+            "archive_sha256": digest,
+            "archive_bytes": path.stat().st_size,
+            "cycles": int(profile.shape[0]),
+            "cycle_duration_s": 60,
+            "sampling_hz": {
+                "pressure_and_motor_power": 100,
+                "flow": 10,
+                "temperature_vibration_efficiency": 1,
+            },
+        },
+        "design": {
+            "target_labels": ["cooler_condition_pct", "valve_condition_pct", "internal_pump_leakage_class", "accumulator_pressure_bar", "stable_flag"],
+            "interpretation": "The four component condition values describe graded degradation rather than independent categorical faults; stable_flag=1 means steady state may not yet have been reached.",
+        },
+        "nominal_baseline_cycles": int(np.count_nonzero(np.all(profile == np.array([100, 100, 0, 130, 0]), axis=1))),
+        "conditioned_cycle_mean_summary": conditioned,
+        "interpretation": [
+            "Profiles isolate one component label while holding other component labels at their nominal values and stable_flag at 0.",
+            "Summaries describe one experimental hydraulic test rig and are not universal operating limits, causal effects, or failure prevalence estimates.",
+            "Motor power is measured, but motor current and RPM are absent; those simulator signals cannot be calibrated from this dataset.",
+            "Labels are cycle-wise, so they do not identify the onset time within a 60-second cycle.",
+            "No raw source observations or time-series rows are emitted.",
+        ],
+    }
+
+
+def write_zema_hydraulic_analysis(input_path: Path, output_path: Path) -> Path:
+    report = analyze_zema_hydraulic(input_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     return output_path
