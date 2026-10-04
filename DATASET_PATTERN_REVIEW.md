@@ -17,7 +17,7 @@ This review records how existing datasets inform scenario coverage. It does not 
 
 - `air_leak` targets compressor assets and affects only `pressure_bar` and `motor_current_a`. Pressure decreases progressively; current increases as a simplified compensation response. Its numeric fractions and difficulty scaling are scenario parameters, not fitted MetroPT estimates.
 - The training and challenge v0.3/v0.2 profiles add compressor-containing cells while retaining prior single-asset and mixed profiles. This is a benchmark coverage choice to make the compressor-specific event sampleable more often, not a claim about compressor prevalence in factories.
-- A 300-run seeded validation sample contained 12 air leaks overall but none in validation or test. The family is not guaranteed in every finite random partition draw; a benchmark release must expose its realized per-partition coverage and may use a separately versioned stratified design if event coverage is a release requirement.
+- The first 300-run seeded validation sample contained 12 air leaks, all in train. After increasing the explicit suite sampling weight, a second sample contained 26 (21 train, 4 validation, 1 test). This improves presence but one test case is not enough for a stable event-metric estimate; manifests must expose realized per-partition coverage, and larger evaluation sets are needed.
 - Bearing degradation remains a slow scalar process effect. Available bearing sources include high-frequency signals and controlled rigs; they do not validate the present low-rate telemetry magnitudes.
 - Event types, severity distributions and suite weights remain explicit benchmark choices. MetroPT's small set of maintenance events is insufficient to estimate failure prevalence.
 - Normal-operation and false-positive-stress suites remain separate from injected fault labels. Data reported as cleaned/normal-only can inform normal-scenario diversity, but not anomaly priors.
@@ -25,7 +25,7 @@ This review records how existing datasets inform scenario coverage. It does not 
 
 ## Reproducible release
 
-The new `suites/training-v0.3.yaml` and `suites/challenge-v0.2.yaml` add an independent, seeded distribution for `air_leak`; prior suite versions are retained unchanged. Compressor-containing asset profiles increase its chance of being sampleable while retaining other asset mixes. Generate with the repository's pinned environment, record the suite and simulator versions, inspect realized event/asset distributions, and publish only synthetic Parquet plus its independent labels artifact. See [dataset generation](DATASETS.md) and [scenario definitions](SCENARIOS.md).
+The new `suites/training-v0.3.yaml` and `suites/challenge-v0.2.yaml` add an independent, seeded distribution for `air_leak`; prior suite versions are retained unchanged. Compressor-containing asset profiles and a higher explicit event weight increase its chance of being sampleable while retaining other asset mixes. Generate with the repository's pinned environment, record the suite and simulator versions, inspect realized event/asset distributions, and publish only synthetic Parquet plus its independent labels artifact. See [dataset generation](DATASETS.md) and [scenario definitions](SCENARIOS.md).
 
 ## Sources
 

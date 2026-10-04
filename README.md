@@ -2,7 +2,7 @@
 
 OT Irregularity Lab is an independent, open source preview toolkit for generating and replaying synthetic industrial telemetry with known, separately stored ground truth. It is model-agnostic: it contains no anomaly detector and makes no product, cloud, or customer-data integration a requirement.
 
-Current software release: [v0.3.1](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/releases/tag/v0.3.1).
+Current public software release: [v0.3.1](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/releases/tag/v0.3.1). The unreleased working tree targets v0.4.0 and adds randomized compressor air-leak cases; see the open [implementation PR](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/pull/5).
 
 Current dataset release: [OT Irregularity Dataset v0.4.0 (1,000 runs)](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/releases/tag/dataset-v0.4.0). Telemetry and labels are distributed as separate archives.
 
@@ -17,10 +17,12 @@ uv sync --extra dev
 uv run ot-lab generate --scenario scenarios/cnc-bearing-medium.yaml --seed 42 --output runs/cnc-0042
 uv run ot-lab replay runs/cnc-0042
 uv run ot-lab batch --suite suites/training.yaml --runs 100 --seed 42 --output datasets/training
-uv run ot-lab dataset create --suite suites/training-v0.3.yaml --runs 1000 --seed 20261005 --output datasets/ot-irregularity-training-v0.5
+uv run ot-lab dataset create --suite suites/training-v0.3.yaml --runs 1000 --seed 20261005 --output datasets/ot-irregularity-training-v0.5-candidate
 ```
 
 For long runs, add `--resume` to keep per-run checkpoints after interruption. Re-run with the same suite, run count, seed, and dedicated output directory to continue generation.
+
+The v0.5 candidate suite is experimental until a release-scale manifest confirms adequate per-partition event coverage; its air-leak effect is qualitative and synthetic.
 
 The versioned randomized training suites mix normal process variation with seeded events across 15 event families in v0.2 and 16 in v0.3. Its realized class, event, asset, and regime distributions are recorded in the dataset manifest. See [the synthetic dataset design](SYNTHETIC_DATASET_DESIGN.md) and [public dataset pattern review](DATASET_PATTERN_REVIEW.md) for sampling evidence and limits.
 
