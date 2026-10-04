@@ -547,6 +547,38 @@ def test_metropt_rail_apu_profile_stays_inside_observed_mode_envelopes():
     assert all(0 <= sample["oil_temperature_c"] <= 110 for sample in loaded + off)
 
 
+def test_metropt_profile_distinguishes_stopped_from_offloaded_current():
+    asset = AssetSpec(
+        asset_id="APU-1", asset_class="compressor", process_profile="metropt3_rail_apu",
+        process_profile_version="1.1.0",
+    )
+    off = [simulate_step(asset, ProcessState(temperature=65), "OFF", 10, 22, np.random.default_rng(seed)) for seed in range(200)]
+    idle = [simulate_step(asset, ProcessState(temperature=65), "IDLE", 10, 22, np.random.default_rng(seed)) for seed in range(200)]
+    off_median = float(np.median([sample["motor_current_a"] for sample in off]))
+    idle_median = float(np.median([sample["motor_current_a"] for sample in idle]))
+    assert off_median == pytest.approx(0.04, abs=0.01)
+    assert idle_median == pytest.approx(4.0, abs=0.1)
+    assert all(8.1 <= sample["pressure_bar"] <= 10.0 for sample in off + idle)
+
+
+def test_metropt_profile_v1_keeps_legacy_idle_current():
+    asset = AssetSpec(asset_id="APU-1", asset_class="compressor", process_profile="metropt3_rail_apu")
+    idle = [simulate_step(asset, ProcessState(temperature=65), "IDLE", 10, 22, np.random.default_rng(seed)) for seed in range(50)]
+    assert float(np.median([sample["motor_current_a"] for sample in idle])) == pytest.approx(0.04, abs=0.01)
+
+
+def test_metropt_profile_v11_emits_documented_startup_peak_once_per_start():
+    asset = AssetSpec(
+        asset_id="APU-1", asset_class="compressor", process_profile="metropt3_rail_apu",
+        process_profile_version="1.1.0",
+    )
+    state = ProcessState(temperature=65)
+    first = simulate_step(asset, state, "WARMUP", 1, 22, np.random.default_rng(1))
+    following = simulate_step(asset, state, "WARMUP", 1, 22, np.random.default_rng(1))
+    assert first["motor_current_a"] == 9.0
+    assert 0 <= following["motor_current_a"] < 0.1
+
+
 def test_metropt_rail_apu_profile_is_rejected_for_non_compressor_assets():
     with pytest.raises(ValueError, match="requires asset_class=compressor"):
         AssetSpec(asset_id="P-1", asset_class="pump", process_profile="metropt3_rail_apu")
@@ -569,6 +601,21 @@ def test_metropt_rail_apu_profile_rejects_nonpositive_time_constants():
         AssetSpec(
             asset_id="APU-1", asset_class="compressor", process_profile="metropt3_rail_apu",
             process_parameters={"oil_thermal_tau_s": 0},
+        )
+    with pytest.raises(ValueError, match="current_unloaded_a must be within"):
+        AssetSpec(
+            asset_id="APU-1", asset_class="compressor", process_profile="metropt3_rail_apu",
+            process_profile_version="1.1.0", process_parameters={"current_unloaded_a": 25},
+        )
+    with pytest.raises(ValueError, match="only available in profile version 1.1.0"):
+        AssetSpec(
+            asset_id="APU-1", asset_class="compressor", process_profile="metropt3_rail_apu",
+            process_profile_version="1.0.0", process_parameters={"current_unloaded_a": 4.0},
+        )
+    with pytest.raises(ValueError, match="unsupported process_profile_version"):
+        AssetSpec(
+            asset_id="APU-1", asset_class="compressor", process_profile="metropt3_rail_apu",
+            process_profile_version="9.0.0",
         )
 
 

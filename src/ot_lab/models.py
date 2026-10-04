@@ -50,7 +50,7 @@ class AssetSpec(BaseModel):
     asset_id: str
     asset_class: AssetType
     process_profile: Literal["generic", "metropt3_rail_apu", "centrifugal_vfd"] = "generic"
-    process_profile_version: Literal["1.0.0"] = "1.0.0"
+    process_profile_version: str = "1.0.0"
     process_parameters: dict[str, float] = Field(default_factory=dict)
     regimes: list[Regime] = Field(
         default_factory=lambda: ["WARMUP", "LOW_LOAD", "NORMAL_LOAD", "HIGH_LOAD", "COOLDOWN"]
@@ -69,12 +69,25 @@ class AssetSpec(BaseModel):
             raise ValueError("centrifugal_vfd process_profile requires asset_class=pump")
         return value
 
+    @field_validator("process_profile_version")
+    @classmethod
+    def validate_process_profile_version(cls, value: str, info: Any) -> str:
+        profile = info.data.get("process_profile", "generic")
+        supported = {
+            "generic": {"1.0.0"},
+            "centrifugal_vfd": {"1.0.0"},
+            "metropt3_rail_apu": {"1.0.0", "1.1.0"},
+        }
+        if value not in supported.get(profile, set()):
+            raise ValueError(f"unsupported process_profile_version {value!r} for {profile}")
+        return value
+
     @field_validator("process_parameters")
     @classmethod
     def validate_process_parameters(cls, value: dict[str, float], info: Any) -> dict[str, float]:
         profile = info.data.get("process_profile", "generic")
         rail_apu_parameters = {
-            "load_tau_s", "current_loaded_base_a", "current_loaded_span_a", "current_off_a",
+            "load_tau_s", "current_loaded_base_a", "current_loaded_span_a", "current_start_a", "current_unloaded_a", "current_off_a",
             "current_noise_a", "pressure_loaded_min_bar", "pressure_loaded_span_bar",
             "pressure_off_bar", "pressure_noise_bar", "oil_temperature_rise_c",
             "oil_thermal_tau_s", "discharge_temperature_rise_c", "discharge_noise_c",
@@ -92,6 +105,10 @@ class AssetSpec(BaseModel):
             else generic_parameters
         )
         unknown = set(value) - allowed
+        if profile == "metropt3_rail_apu" and info.data.get("process_profile_version") != "1.1.0":
+            incompatible = set(value) & {"current_start_a", "current_unloaded_a"}
+            if incompatible:
+                raise ValueError(f"{', '.join(sorted(incompatible))} only available in profile version 1.1.0")
         if unknown:
             raise ValueError(f"unknown process parameters: {', '.join(sorted(unknown))}")
         if any(not isinstance(parameter, (int, float)) or not float("-inf") < parameter < float("inf") for parameter in value.values()):
@@ -120,6 +137,23 @@ class AssetSpec(BaseModel):
             "thermal_time_constant_scale": (0.01, 100),
             "actuator_tau_s": (0.01, 100000),
         }
+        rail_apu_ranges = {
+            "load_tau_s": (0.01, 100000),
+            "current_loaded_base_a": (0, 20),
+            "current_loaded_span_a": (0, 20),
+            "current_start_a": (0, 20),
+            "current_unloaded_a": (0, 20),
+            "current_off_a": (0, 2),
+            "pressure_loaded_min_bar": (0, 20),
+            "pressure_loaded_span_bar": (0, 20),
+            "pressure_off_bar": (0, 20),
+            "oil_thermal_tau_s": (0.01, 1000000),
+            "oil_temperature_rise_c": (0, 150),
+        }
+        if profile == "metropt3_rail_apu":
+            for key, limits in rail_apu_ranges.items():
+                if key in value and not limits[0] <= value[key] <= limits[1]:
+                    raise ValueError(f"{key} must be within {limits[0]}..{limits[1]}")
         for key, limits in pump_ranges.items():
             if key in value and not limits[0] <= value[key] <= limits[1]:
                 raise ValueError(f"{key} must be within {limits[0]}..{limits[1]}")

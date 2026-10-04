@@ -58,6 +58,7 @@ class ProcessState:
     rpm: float = 0.0
     vibration: float = 0.0
     previous_signals: dict[str, float] = field(default_factory=dict)
+    previous_regime: Regime | None = None
 
 
 def regime_at(t: float, duration: float, regimes: list[Regime], shift_pattern: list[Regime] | None = None) -> Regime:
@@ -249,6 +250,8 @@ def _simulate_metropt3_rail_apu(
         "load_tau_s": 8.0,
         "current_loaded_base_a": 4.76,
         "current_loaded_span_a": 1.44,
+        "current_start_a": 9.0,
+        "current_unloaded_a": 4.0,
         "current_off_a": 0.04,
         "current_noise_a": 0.35,
         "pressure_loaded_min_bar": 7.79,
@@ -271,9 +274,25 @@ def _simulate_metropt3_rail_apu(
     if loaded:
         current = parameters["current_loaded_base_a"] + parameters["current_loaded_span_a"] * state.load + float(rng.normal(0, parameters["current_noise_a"]))
         pressure_target = parameters["pressure_loaded_min_bar"] + parameters["pressure_loaded_span_bar"] * state.load
+    elif regime == "IDLE" and asset.process_profile_version == "1.1.0":
+        # UCI's MetroPT variable description separates stopped (~0 A) from
+        # offloaded operation (~4 A); the binary channels do not fully expose it.
+        current = parameters["current_unloaded_a"] + float(rng.normal(0, parameters["current_noise_a"]))
+        pressure_target = parameters["pressure_off_bar"]
     else:
         current = parameters["current_off_a"] + float(rng.normal(0, parameters["current_noise_a"] * 0.0714286))
         pressure_target = parameters["pressure_off_bar"]
+    active_regimes = {"WARMUP", "LOW_LOAD", "NORMAL_LOAD", "HIGH_LOAD"}
+    starting = (
+        asset.process_profile_version == "1.1.0"
+        and regime in active_regimes
+        and state.previous_regime not in active_regimes
+    )
+    if starting:
+        # UCI reports approximately 9 A at startup. Its measured cadence cannot
+        # resolve transient duration, so v1.1 models one sample at the start
+        # peak; the following sample returns to process current.
+        current = parameters["current_start_a"]
     # The source supports observed oil-temperature envelopes, not a time constant.
     # This deliberately slow illustrative response is configurable in a future schema.
     state.temperature += (ambient_c + parameters["oil_temperature_rise_c"] - state.temperature) * (1 - np.exp(-max(dt, 0) / parameters["oil_thermal_tau_s"]))
@@ -286,6 +305,7 @@ def _simulate_metropt3_rail_apu(
         "load_pct": _bounded(100 * state.load + rng.normal(0, 1), 0, 100),
     }
     state.previous_signals = result.copy()
+    state.previous_regime = regime
     return result
 
 

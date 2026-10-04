@@ -46,10 +46,32 @@ def analyze_metropt(path: Path) -> dict[str, Any]:
     frame = frame.rename(rename).with_columns(
         pl.col("timestamp").cast(pl.String).str.to_datetime(strict=False, exact=False),
         *[pl.col(name).cast(pl.Float64, strict=False) for name in aliases if name != "timestamp"],
-    ).drop_nulls(["timestamp", "motor_current_a", "oil_temperature_c", "pressure_bar", "compressor_valve", "load_valve"])
-    if frame.is_empty():
+    )
+    input_rows = frame.height
+    required_columns = ["timestamp", "motor_current_a", "oil_temperature_c", "pressure_bar", "compressor_valve", "load_valve"]
+    null_or_parse_error_counts = {
+        name: frame.get_column(name).null_count() for name in required_columns
+    }
+    source_order_timestamps = frame.get_column("timestamp").drop_nulls()
+    source_order_deltas = source_order_timestamps.diff().dt.total_microseconds()
+    out_of_order_intervals = int((source_order_deltas < 0).sum() or 0)
+    valid_frame = frame.drop_nulls(required_columns)
+    dropped_rows = input_rows - valid_frame.height
+    if valid_frame.is_empty():
         raise ValueError("MetroPT input has no usable rows after timestamp and sensor validation")
-    frame = frame.sort("timestamp").with_columns(
+    duplicate_timestamp_extra_rows = int(
+        valid_frame.group_by("timestamp").len()
+        .filter(pl.col("len") > 1)
+        .select((pl.col("len") - 1).sum())
+        .item() or 0
+    )
+    invalid_ranges = {
+        "negative_motor_current_rows": int((valid_frame.get_column("motor_current_a") < 0).sum()),
+        "negative_pressure_rows": int((valid_frame.get_column("pressure_bar") < 0).sum()),
+        "nonbinary_COMP_rows": int((~valid_frame.get_column("compressor_valve").is_in([0.0, 1.0])).sum()),
+        "nonbinary_load_valve_rows": int((~valid_frame.get_column("load_valve").is_in([0.0, 1.0])).sum()),
+    }
+    frame = valid_frame.sort("timestamp").with_columns(
         pl.col("timestamp").diff().dt.total_microseconds().truediv(1_000_000).alias("cadence_s")
     )
     frame = frame.with_columns(
@@ -72,6 +94,22 @@ def analyze_metropt(path: Path) -> dict[str, Any]:
             pl.corr("motor_current_a", "pressure_bar").alias("current_pressure_pearson_r"),
         ).row(0, named=True)
         mode_stats[mode] = {key: (round(value, 6) if isinstance(value, float) else value) for key, value in values.items()}
+    digital_state_stats: dict[str, Any] = {}
+    state_groups = frame.group_by(["compressor_valve", "load_valve"]).agg(
+        pl.len().alias("rows"),
+        pl.col("motor_current_a").quantile(0.05).alias("motor_current_a_p05"),
+        pl.col("motor_current_a").quantile(0.50).alias("motor_current_a_p50"),
+        pl.col("motor_current_a").quantile(0.95).alias("motor_current_a_p95"),
+        pl.col("pressure_bar").quantile(0.50).alias("pressure_bar_p50"),
+        (pl.col("motor_current_a") >= 8.5).mean().alias("fraction_current_at_least_8p5_a"),
+    )
+    for row in state_groups.iter_rows(named=True):
+        state_key = f"COMP={int(row['compressor_valve'])},DV={int(row['load_valve'])}"
+        digital_state_stats[state_key] = {
+            key: (round(value, 6) if isinstance(value, float) else value)
+            for key, value in row.items()
+            if key not in {"compressor_valve", "load_valve"}
+        }
     cadence = frame.filter(pl.col("cadence_s") > 0).select(
         pl.len().alias("positive_intervals"),
         pl.col("cadence_s").quantile(0.05).alias("p05_s"),
@@ -80,7 +118,16 @@ def analyze_metropt(path: Path) -> dict[str, Any]:
         (pl.col("cadence_s") > 120).mean().alias("fraction_over_120s"),
     ).row(0, named=True)
     result = {
-        "analysis_version": "1.0.0",
+        "analysis_version": "1.1.0",
+        "data_quality": {
+            "input_rows": input_rows,
+            "usable_rows": frame.height,
+            "rows_dropped_for_null_or_parse_errors": dropped_rows,
+            "null_or_parse_error_counts_by_required_column": null_or_parse_error_counts,
+            "duplicate_timestamp_extra_rows": duplicate_timestamp_extra_rows,
+            "out_of_order_timestamp_intervals": out_of_order_intervals,
+            "invalid_value_counts": invalid_ranges,
+        },
         "source": {
             "dataset": "MetroPT-3",
             "publisher": "UCI Machine Learning Repository",
@@ -100,6 +147,7 @@ def analyze_metropt(path: Path) -> dict[str, Any]:
         },
         "cadence_seconds": {key: round(value, 6) if isinstance(value, float) else value for key, value in cadence.items()},
         "mode_conditioned_signals": mode_stats,
+        "digital_state_combinations": digital_state_stats,
         "interpretation": [
             "Descriptive statistics characterize one railway air-production unit; they are not universal compressor ranges or failure priors.",
             "The off_or_unloaded bucket combines states the available binary channels do not safely distinguish.",
