@@ -23,7 +23,7 @@ jobs:
           enable-cache: true
           cache-suffix: ${{ matrix.extra }}
       - name: Install Python 3.12 and dependencies
-        run: uv sync --python 3.12 --extra dev ${{ matrix.extra != 'core' && format('--extra {0}', matrix.extra) || '' }} --group lint
+        run: uv sync --python 3.12 --extra dev --extra calibration ${{ matrix.extra != 'core' && format('--extra {0}', matrix.extra) || '' }} --group lint
       - name: Lint
         run: uv run ruff check src tests
       - name: Test
