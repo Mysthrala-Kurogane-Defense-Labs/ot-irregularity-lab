@@ -12,6 +12,7 @@ from typing import Any
 
 PARTITIONS = ("train", "validation", "test")
 _RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+_WINDOWS_RESERVED_NAMES = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
 
 
 def _contained_file(root: Path, *parts: str) -> Path:
@@ -27,6 +28,8 @@ def _contained_file(root: Path, *parts: str) -> Path:
 def _validate_run_id(run_id: Any) -> str:
     if not isinstance(run_id, str) or not _RUN_ID.fullmatch(run_id):
         raise ValueError("dataset manifest run_id must be a safe path component")
+    if run_id.split(".", 1)[0].upper() in _WINDOWS_RESERVED_NAMES:
+        raise ValueError("dataset manifest run_id must not use a Windows reserved device name")
     return run_id
 
 
