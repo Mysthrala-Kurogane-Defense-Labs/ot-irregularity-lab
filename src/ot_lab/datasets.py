@@ -238,5 +238,11 @@ def package_dataset(
         }
         (stage / "release_manifest.json").write_text(json.dumps(release_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         (stage / "DATASET_LICENSE.txt").write_bytes(license_bytes)
+        checksums = [
+            f"{_sha256(path)}  {path.name}"
+            for path in sorted(stage.iterdir(), key=lambda item: item.name)
+            if path.is_file()
+        ]
+        (stage / "SHA256SUMS.txt").write_text("\n".join(checksums) + "\n", encoding="utf-8")
         stage.replace(output)
     return output

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import zipfile
 
@@ -29,6 +30,11 @@ def test_partition_packages_are_deterministic_and_do_not_include_run_truth_or_se
     first_manifest = json.loads((first / "release_manifest.json").read_text(encoding="utf-8"))
     second_manifest = json.loads((second / "release_manifest.json").read_text(encoding="utf-8"))
     assert first_manifest == second_manifest
+    sums = (first / "SHA256SUMS.txt").read_text(encoding="utf-8").splitlines()
+    assert sums == (second / "SHA256SUMS.txt").read_text(encoding="utf-8").splitlines()
+    for line in sums:
+        expected_hash, filename = line.split("  ", maxsplit=1)
+        assert hashlib.sha256((first / filename).read_bytes()).hexdigest() == expected_hash
     assert first_manifest["dataset_version"] == "0.4.0"
     assert set(first_manifest["partitions"]) == {"train", "test"}
     assert first_manifest["contains_run_seeds"] is False
