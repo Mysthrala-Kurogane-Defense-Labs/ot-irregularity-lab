@@ -201,6 +201,50 @@ def _generate_suite_scenario(base: dict[str, Any], generation: dict[str, Any], r
         data["anomalies"] = sorted(placed, key=lambda event: (event["asset"], event["start"], event["type"]))
     return data
 
+
+def _generate_dataset_scenario(
+    base: dict[str, Any], generation: dict[str, Any], rng: np.random.Generator,
+    run_id: str, dataset_index: int, dataset_count: int,
+) -> dict[str, Any]:
+    """Sample a run while guaranteeing coverage without making a whole small partition anomalous."""
+    requested = generation.get("coverage_by_partition", {})
+    forced = [
+        str(event_type) for event_type, count in requested.items()
+        if dataset_index < min(int(count), max(1, dataset_count // 10))
+    ]
+    if not forced:
+        return _generate_suite_scenario(base, generation, rng, run_id)
+
+    templates = [item for item in generation.get("anomaly_templates", []) if item.get("type") in forced]
+    missing = set(forced) - {item.get("type") for item in templates}
+    if missing:
+        raise ValueError(f"coverage_by_partition references unknown anomaly templates: {sorted(missing)}")
+    assets = list(base.get("assets", []))
+    asset_profiles = generation.get("asset_profiles", [])
+    if asset_profiles:
+        compatible_profiles = [
+            profile for profile in asset_profiles
+            if all(any(asset.get("asset_class") in item.get("asset_classes", []) for asset in profile.get("assets", [])) for item in templates)
+        ]
+        if not compatible_profiles:
+            raise ValueError(f"no asset profile supports required event coverage: {forced}")
+        profile = _weighted_choice(compatible_profiles, rng, "asset profiles compatible with required event coverage")
+        assets = profile["assets"]
+    elif any(not any(asset.get("asset_class") in item.get("asset_classes", []) for asset in assets) for item in templates):
+        raise ValueError(f"base assets do not support required event coverage: {forced}")
+    local_base = json.loads(json.dumps(base))
+    local_base["assets"] = assets
+    local_generation = dict(generation)
+    local_generation.pop("asset_profiles", None)
+    local_generation["anomaly_probability"] = 1.0
+    local_generation["anomaly_count"] = {"min": len(forced), "max": len(forced)}
+    local_generation["anomaly_templates"] = templates
+    for _ in range(256):
+        sampled = _generate_suite_scenario(local_base, local_generation, rng, run_id)
+        if len(sampled["anomalies"]) == len(forced):
+            return sampled
+    raise ValueError(f"could not realize required partition event coverage: {forced}")
+
 def read_scenario(path: Path) -> Scenario:
     with path.open("r", encoding="utf-8") as stream:
         data = yaml.safe_load(stream)
@@ -693,7 +737,7 @@ def _resume_batch(suite_path: Path, runs: int, output: Path, seed: int, workers:
         local_rng = np.random.default_rng(run_seed)
         base = suite["scenario"]
         generation = suite.get("generation", {})
-        scenario_data = _generate_suite_scenario(base, generation, local_rng, run_id) if generation else json.loads(json.dumps(base))
+        scenario_data = _generate_dataset_scenario(base, generation, local_rng, run_id, index, count) if generation else json.loads(json.dumps(base))
         scenario_data["run_id"] = run_id
         scenario_data = _resolve_ranges(scenario_data, local_rng)
         scenario_data["run_id"] = run_id
@@ -802,7 +846,7 @@ def _batch_to_directory(
             local_rng = np.random.default_rng(run_seed)
             run_id = f"{partition}-{index+1:05d}"
             if generation:
-                scenario_data = _generate_suite_scenario(base, generation, local_rng, run_id)
+                scenario_data = _generate_dataset_scenario(base, generation, local_rng, run_id, index, count)
             else:
                 scenario_data = json.loads(json.dumps(base))
                 scenario_data["run_id"] = run_id

@@ -1158,6 +1158,47 @@ scenario:
     assert pl.read_parquet(run_dir / "telemetry.parquet").equals(pl.read_parquet(tmp_path / "batch-replay" / "telemetry.parquet"))
 
 
+def test_dataset_partition_coverage_uses_unique_seeds_and_declared_family(tmp_path):
+    suite = tmp_path / "coverage.yaml"
+    suite.write_text("""suite_id: coverage-test
+partitions: {train: 0.6, validation: 0.2, test: 0.2}
+scenario:
+  scenario_id: coverage-test
+  duration_s: 30
+  sampling_interval_ms: 1000
+  assets: [{asset_id: C-1, asset_class: compressor}]
+generation:
+  anomaly_probability: 0.0
+  anomaly_count: {min: 1, max: 1}
+  coverage_by_partition: {air_leak: 2}
+  anomaly_templates:
+    - type: air_leak
+      asset_classes: [compressor]
+      parameters: {pressure_loss_fraction: {min: 0.1, max: 0.2}}
+""", encoding="utf-8")
+    output = tmp_path / "covered"
+    batch(suite, 10, output, seed=55)
+    manifest = json.loads((output / "dataset_manifest.json").read_text())
+    assert manifest["event_distribution_by_partition"]["train"]["air_leak"] >= 1
+    assert manifest["event_distribution_by_partition"]["validation"]["air_leak"] >= 1
+    assert manifest["event_distribution_by_partition"]["test"]["air_leak"] >= 1
+    assert all(values["normal"] > 0 and values["anomalous"] > 0 for values in manifest["class_distribution_by_partition"].values())
+    assert len({run["seed"] for run in manifest["runs"]}) == 10
+    rerun = tmp_path / "covered-rerun"
+    batch(suite, 10, rerun, seed=55)
+    rerun_manifest = json.loads((rerun / "dataset_manifest.json").read_text())
+    assert [run["scenario_sha256"] for run in manifest["runs"]] == [run["scenario_sha256"] for run in rerun_manifest["runs"]]
+
+
+def test_dataset_partition_coverage_rejects_unknown_event_family(tmp_path):
+    from ot_lab.simulation import _generate_dataset_scenario
+
+    base = {"scenario_id": "coverage-test", "assets": [{"asset_id": "C-1", "asset_class": "compressor"}]}
+    generation = {"coverage_by_partition": {"not-a-family": 1}, "anomaly_templates": []}
+    with pytest.raises(ValueError, match="unknown anomaly templates"):
+        _generate_dataset_scenario(base, generation, np.random.default_rng(1), "run", 0, 10)
+
+
 def test_batch_rejects_persistent_challenge_partition(tmp_path):
     suite = tmp_path / "suite.yaml"
     suite.write_text("""partitions: {train: 0.5, validation: 0.25, test: 0.15, challenge: 0.1}

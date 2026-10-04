@@ -23,6 +23,9 @@ scenario:
 generation:
   anomaly_probability: 0.65
   anomaly_count: {min: 1, max: 2}
+  # Guarantee at least this many air-leak runs within each generated partition.
+  # Indexing is partition-local; each run still gets its own independent seed.
+  coverage_by_partition: {air_leak: 50}
   vary:
     duration_s: {min: 300, max: 600}
     sampling_interval_ms: {choices: [500, 1000]}
