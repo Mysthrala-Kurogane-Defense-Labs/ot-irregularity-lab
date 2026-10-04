@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from typing import Any, Literal
 
@@ -165,7 +166,7 @@ class AssetSpec(BaseModel):
         profile = info.data.get("process_profile", "generic")
         supported = {
             "generic": {"1.0.0"},
-            "centrifugal_vfd": {"1.0.0"},
+            "centrifugal_vfd": {"1.0.0", "1.1.0"},
             "metropt3_rail_apu": {"1.0.0", "1.1.0"},
         }
         if value not in supported.get(profile, set()):
@@ -189,11 +190,13 @@ class AssetSpec(BaseModel):
             "pump_total_efficiency", "pump_supply_voltage_v", "pump_power_factor",
             "pump_idle_current_a", "pump_temperature_rise_c",
         }
-        allowed = (
-            rail_apu_parameters if profile == "metropt3_rail_apu"
-            else generic_parameters | pump_parameters if profile == "centrifugal_vfd"
-            else generic_parameters
-        )
+        pump_curve_parameters = {"pump_static_head_fraction", "pump_shutoff_head_ratio"}
+        if profile == "metropt3_rail_apu":
+            allowed = rail_apu_parameters
+        elif profile == "centrifugal_vfd":
+            allowed = generic_parameters | pump_parameters | pump_curve_parameters
+        else:
+            allowed = generic_parameters
         unknown = set(value) - allowed
         if profile == "metropt3_rail_apu" and info.data.get("process_profile_version") != "1.1.0":
             incompatible = set(value) & {"current_start_a", "current_unloaded_a"}
@@ -226,6 +229,8 @@ class AssetSpec(BaseModel):
             "sensor_noise_scale": (0, 10),
             "thermal_time_constant_scale": (0.01, 100),
             "actuator_tau_s": (0.01, 100000),
+            "pump_static_head_fraction": (0.0, 0.8),
+            "pump_shutoff_head_ratio": (1.01, 2.0),
         }
         rail_apu_ranges = {
             "load_tau_s": (0.01, 100000),
@@ -247,6 +252,10 @@ class AssetSpec(BaseModel):
         for key, limits in pump_ranges.items():
             if key in value and not limits[0] <= value[key] <= limits[1]:
                 raise ValueError(f"{key} must be within {limits[0]}..{limits[1]}")
+        if profile == "centrifugal_vfd" and info.data.get("process_profile_version") != "1.1.0":
+            incompatible = set(value) & pump_curve_parameters
+            if incompatible:
+                raise ValueError(f"{', '.join(sorted(incompatible))} only available in profile version 1.1.0")
         if profile == "centrifugal_vfd":
             params = {
                 "pump_rated_speed_rpm": 2900.0,
@@ -258,17 +267,25 @@ class AssetSpec(BaseModel):
                 "pump_idle_current_a": 4.0,
             }
             params.update(value)
-            hydraulic_power_kw = (
-                params["pump_rated_flow_l_min"] * params["pump_rated_pressure_bar"] / 600
-            )
-            rated_current = params["pump_idle_current_a"] + (
-                hydraulic_power_kw * 1000
-                / params["pump_total_efficiency"]
-                / (3 ** 0.5 * params["pump_supply_voltage_v"] * params["pump_power_factor"])
-            )
+            reachable_load = min(0.86 * value.get("load_scale", 1.0), 1.0)
+            if info.data.get("process_profile_version") == "1.1.0":
+                static = value.get("pump_static_head_fraction", 0.0)
+                shutoff = value.get("pump_shutoff_head_ratio", 1.25)
+                flow_ratio = math.sqrt(max(shutoff * reachable_load**2 - static, 0.0) / (shutoff - static))
+                pressure_ratio = static + (1 - static) * flow_ratio**2 if shutoff * reachable_load**2 > static else min(static, shutoff * reachable_load**2)
+                hydraulic_power_kw = (
+                    params["pump_rated_flow_l_min"] * flow_ratio
+                    * params["pump_rated_pressure_bar"] * pressure_ratio / 600
+                )
+            else:
+                hydraulic_power_kw = (
+                    params["pump_rated_flow_l_min"] * params["pump_rated_pressure_bar"]
+                    * reachable_load**3 / 600
+                )
             maximum_regime_current = params["pump_idle_current_a"] + (
-                rated_current - params["pump_idle_current_a"]
-            ) * (0.86 * 1.5) ** 3
+                hydraulic_power_kw * 1000 / params["pump_total_efficiency"]
+                / (3**0.5 * params["pump_supply_voltage_v"] * params["pump_power_factor"])
+            )
             if maximum_regime_current > 100:
                 raise ValueError("pump parameters exceed the pump motor_current_a engineering maximum at HIGH_LOAD")
         return value

@@ -3,7 +3,8 @@ scenario_version: 1.0.0
 run_id: pump-vfd-normal-0001
 description: >-
   Synthetic normal-operation example using the optional simplified centrifugal
-  pump VFD profile. Parameters are illustrative and are not a product rating.
+  pump VFD profile with an explicit system static-head fraction. Parameters
+    are illustrative and are not a product rating or pump-specific curve fit.
 duration_s: 600
 sampling_interval_ms: 1000
 sampling_jitter_ms: 10
@@ -13,7 +14,7 @@ assets:
   - asset_id: PUMP-01
     asset_class: pump
     process_profile: centrifugal_vfd
-    process_profile_version: 1.0.0
+    process_profile_version: 1.1.0
     process_parameters:
       pump_rated_speed_rpm: 2900
       pump_rated_flow_l_min: 750
@@ -23,3 +24,5 @@ assets:
       pump_power_factor: 0.85
       pump_idle_current_a: 4
       pump_temperature_rise_c: 45
+      pump_static_head_fraction: 0.2
+      pump_shutoff_head_ratio: 1.3

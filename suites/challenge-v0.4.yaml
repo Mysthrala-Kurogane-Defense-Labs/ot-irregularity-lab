@@ -1,0 +1,116 @@
+suite_id: ot-irregularity-challenge
+suite_version: 0.4.0
+description: >-
+  Hidden-case sampling profile for evaluator-controlled challenges. This deliberately
+  emphasizes multivariate, low-intensity and communication cases while retaining
+  realistic assets and regimes. Weights are benchmark design choices, not field rates.
+partitions:
+  train: 0.70
+  validation: 0.15
+  test: 0.15
+scenario:
+  scenario_id: hidden-ot-challenge
+  scenario_version: 3.0.0
+  run_id: challenge
+  duration_s: 300
+  sampling_interval_ms: 1000
+  ambient_temperature_c: 22
+  assets:
+    - asset_id: CNC-01
+      asset_class: cnc
+      regimes: [OFF, IDLE, WARMUP, LOW_LOAD, NORMAL_LOAD, HIGH_LOAD, COOLDOWN, MAINTENANCE]
+generation:
+  anomaly_probability: 0.85
+  anomaly_count: {min: 1, max: 2}
+  vary:
+    duration_s: {min: 300, max: 900}
+    sampling_interval_ms: {choices: [500, 1000, 2000]}
+    sampling_jitter_ms: {min: 0, max: 40}
+    ambient_temperature_c: {min: 10, max: 36}
+    ambient_temperature_drift_c: {min: -5, max: 5}
+    expose_operating_regime: {choices: [true, false]}
+  asset_profiles:
+    - {profile_id: cnc, weight: 1, assets: [{asset_id: CNC-01, asset_class: cnc}]}
+    - {profile_id: pump, weight: 1, assets: [{asset_id: PUMP-01, asset_class: pump}]}
+    - {profile_id: compressor, weight: 1, assets: [{asset_id: COMPRESSOR-01, asset_class: compressor}]}
+    - {profile_id: conveyor, weight: 1, assets: [{asset_id: CONVEYOR-01, asset_class: conveyor}]}
+    - {profile_id: cell, weight: 2, assets: [{asset_id: CNC-01, asset_class: cnc}, {asset_id: PUMP-01, asset_class: pump}]}
+    - {profile_id: mixed-plant, weight: 2, assets: [{asset_id: CNC-01, asset_class: cnc}, {asset_id: PUMP-01, asset_class: pump}, {asset_id: COMPRESSOR-01, asset_class: compressor}, {asset_id: CONVEYOR-01, asset_class: conveyor}]}
+    - {profile_id: compressor-cell, weight: 2, assets: [{asset_id: COMPRESSOR-01, asset_class: compressor}, {asset_id: PUMP-01, asset_class: pump}]}
+    - {profile_id: compressor-mixed-plant, weight: 3, assets: [{asset_id: CNC-01, asset_class: cnc}, {asset_id: PUMP-01, asset_class: pump}, {asset_id: COMPRESSOR-01, asset_class: compressor}, {asset_id: CONVEYOR-01, asset_class: conveyor}]}
+  # Hidden cases sample a pump model and numeric profile parameters per asset.
+  asset_process_profiles:
+    - {profile_id: generic-pump, weight: 3, asset_classes: [pump], process_profile: generic}
+    - profile_id: centrifugal-vfd-pump
+      weight: 1
+      asset_classes: [pump]
+      process_profile: centrifugal_vfd
+      process_profile_version: 1.1.0
+      process_parameters:
+        pump_rated_speed_rpm: {min: 2800, max: 3000}
+        pump_rated_flow_l_min: {min: 700, max: 800}
+        pump_rated_pressure_bar: {min: 10, max: 12}
+        pump_total_efficiency: {min: 0.65, max: 0.78}
+        pump_supply_voltage_v: {min: 400, max: 415}
+        pump_power_factor: {min: 0.85, max: 0.95}
+        pump_idle_current_a: {min: 3.0, max: 5.0}
+        pump_temperature_rise_c: {min: 35, max: 55}
+        pump_static_head_fraction: {min: 0.0, max: 0.4}
+        pump_shutoff_head_ratio: {min: 1.15, max: 1.6}
+  regime_profiles:
+    - {profile_id: transitions, weight: 3, shift_pattern: [IDLE, WARMUP, LOW_LOAD, HIGH_LOAD, COOLDOWN, IDLE]}
+    - {profile_id: steady, weight: 2, shift_pattern: [NORMAL_LOAD, HIGH_LOAD, NORMAL_LOAD]}
+    - {profile_id: maintenance, weight: 1, shift_pattern: [NORMAL_LOAD, MAINTENANCE, IDLE, NORMAL_LOAD]}
+  anomaly_templates:
+    - type: air_leak
+      weight: 1
+      asset_classes: [compressor]
+      start_fraction: {min: 0.15, max: 0.8}
+      duration_fraction: {min: 0.05, max: 0.25}
+      severity: {min: 0.08, max: 0.65}
+      parameters:
+        pressure_loss_fraction: {min: 0.03, max: 0.25}
+        current_gain: {min: 0.03, max: 0.30}
+        progression: {choices: [linear, slow_start, fast_start]}
+    - type: bearing_degradation
+      weight: 1
+      asset_classes: [cnc, pump, compressor, conveyor]
+      start_fraction: {min: 0.15, max: 0.75}
+      duration_fraction: {min: 0.15, max: 0.50}
+      severity: {min: 0.08, max: 0.55}
+      parameters: {vibration_gain: {min: 0.04, max: 0.35}, temperature_gain: {min: 0.02, max: 0.15}, progression: {choices: [linear, slow_start]}}
+    - type: multivariate_novelty
+      weight: 2
+      asset_classes: [cnc, pump, compressor, conveyor]
+      start_fraction: {min: 0.2, max: 0.8}
+      duration_fraction: {min: 0.08, max: 0.25}
+      severity: {min: 0.25, max: 0.8}
+    - type: sensor_drift
+      weight: 1
+      asset_classes: [cnc, pump, compressor, conveyor]
+      start_fraction: {min: 0.15, max: 0.7}
+      duration_fraction: {min: 0.15, max: 0.5}
+      severity: {min: 0.1, max: 0.65}
+      parameters: {signal: {signal_class: any}, rate_per_minute: {min: 0.05, max: 0.6}}
+    - type: missing_telemetry
+      weight: 1
+      asset_classes: [cnc, pump, compressor, conveyor]
+      start_fraction: {min: 0.15, max: 0.8}
+      duration_fraction: {min: 0.05, max: 0.25}
+      severity: {min: 0.1, max: 1.0}
+      parameters: {loss_pct: {choices: [5, 10, 25, 50, 100]}, tag_selection: {choices: [single, multiple, all]}}
+    - type: cavitation
+      weight: 0.8
+      asset_classes: [pump, cnc]
+      start_fraction: {min: 0.15, max: 0.8}
+      duration_fraction: {min: 0.08, max: 0.3}
+      severity: {min: 0.1, max: 0.65}
+      parameters: {vibration_gain: {min: 0.2, max: 1.2}, flow_loss: {min: 0.04, max: 0.25}, pressure_loss: {min: 0.03, max: 0.2}}
+    - type: asset_communication_loss
+      weight: 0.5
+      asset_classes: [cnc, pump, compressor, conveyor]
+      start_fraction: {min: 0.2, max: 0.8}
+      duration_fraction: {min: 0.02, max: 0.12}
+      severity: {min: 0.1, max: 1.0}
+
+

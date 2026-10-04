@@ -640,8 +640,19 @@ def test_centrifugal_vfd_profile_rejects_wrong_asset_and_unworkable_motor_rating
     with pytest.raises(ValueError, match="engineering maximum"):
         AssetSpec(
             asset_id="P-1", asset_class="pump", process_profile="centrifugal_vfd",
-            process_parameters={"pump_rated_flow_l_min": 2000, "pump_rated_pressure_bar": 13},
+            process_parameters={"pump_rated_flow_l_min": 2000, "pump_rated_pressure_bar": 13,
+                                "pump_total_efficiency": 0.35, "pump_supply_voltage_v": 200,
+                                "pump_power_factor": 0.5},
         )
+
+
+def test_vfd_pump_accepts_reachable_rating_and_metadata_bounds_are_profile_specific():
+    from ot_lab.process import signal_metadata
+
+    AssetSpec(asset_id="P-1", asset_class="pump", process_profile="centrifugal_vfd",
+              process_parameters={"pump_rated_flow_l_min": 1000, "pump_rated_pressure_bar": 13})
+    assert signal_metadata("pump")["rpm"][3] == 3600
+    assert signal_metadata("pump", "centrifugal_vfd")["rpm"][3] == 5000
 
 
 def test_centrifugal_vfd_profile_rejects_unknown_parameters():
@@ -649,6 +660,66 @@ def test_centrifugal_vfd_profile_rejects_unknown_parameters():
         AssetSpec(
             asset_id="P-1", asset_class="pump", process_profile="centrifugal_vfd",
             process_parameters={"pump_efficiency": 0.8},
+        )
+
+
+def test_centrifugal_vfd_static_head_curve_and_zero_static_head_limit():
+    base = {
+        "pump_rated_speed_rpm": 2900,
+        "pump_rated_flow_l_min": 750,
+        "pump_rated_pressure_bar": 12,
+        "pump_static_head_fraction": 0.15,
+        "pump_shutoff_head_ratio": 1.4,
+        "sensor_noise_scale": 1e-10,
+        "actuator_tau_s": 0.01,
+    }
+    asset = AssetSpec(
+        asset_id="P-1", asset_class="pump", process_profile="centrifugal_vfd",
+        process_profile_version="1.1.0", process_parameters=base,
+    )
+    low_state = ProcessState(temperature=22)
+    high_state = ProcessState(temperature=22)
+    low = simulate_step(asset, low_state, "LOW_LOAD", 100, 22, np.random.default_rng(3))
+    high = simulate_step(asset, high_state, "HIGH_LOAD", 100, 22, np.random.default_rng(3))
+    static = base["pump_static_head_fraction"]
+    shutoff = base["pump_shutoff_head_ratio"]
+    rated_pressure = base["pump_rated_pressure_bar"]
+    rated_flow = base["pump_rated_flow_l_min"]
+    for state, result in ((low_state, low), (high_state, high)):
+        speed_ratio = state.rpm / base["pump_rated_speed_rpm"]
+        expected_flow_ratio = np.sqrt(max(shutoff * speed_ratio**2 - static, 0) / (shutoff - static))
+        assert result["flow_l_min"] == pytest.approx(rated_flow * expected_flow_ratio, abs=1e-6)
+        expected_pressure = (
+            rated_pressure * (static + (1 - static) * expected_flow_ratio**2)
+            if shutoff * speed_ratio**2 > static
+            else rated_pressure * min(static, shutoff * speed_ratio**2)
+        )
+        assert result["pressure_bar"] == pytest.approx(expected_pressure, abs=1e-6)
+    assert high["flow_l_min"] / rated_flow != pytest.approx(high_state.rpm / base["pump_rated_speed_rpm"])
+    assert high["motor_current_a"] > low["motor_current_a"]
+
+    friction_only = AssetSpec(
+        asset_id="P-2", asset_class="pump", process_profile="centrifugal_vfd",
+        process_profile_version="1.1.0",
+        process_parameters={**base, "pump_static_head_fraction": 0.0},
+    )
+    state = ProcessState(temperature=22)
+    sample = simulate_step(friction_only, state, "HIGH_LOAD", 100, 22, np.random.default_rng(4))
+    ratio = state.rpm / base["pump_rated_speed_rpm"]
+    assert sample["flow_l_min"] == pytest.approx(rated_flow * ratio, abs=1e-6)
+    assert sample["pressure_bar"] == pytest.approx(rated_pressure * ratio**2, abs=1e-6)
+
+
+def test_centrifugal_vfd_curve_parameters_are_versioned():
+    with pytest.raises(ValueError, match="only available in profile version 1.1.0"):
+        AssetSpec(
+            asset_id="P-1", asset_class="pump", process_profile="centrifugal_vfd",
+            process_profile_version="1.0.0", process_parameters={"pump_static_head_fraction": 0.2},
+        )
+    with pytest.raises(ValueError, match="pump_static_head_fraction must be within"):
+        AssetSpec(
+            asset_id="P-1", asset_class="pump", process_profile="centrifugal_vfd",
+            process_profile_version="1.1.0", process_parameters={"pump_static_head_fraction": 0.9},
         )
 
 
@@ -690,6 +761,61 @@ def test_training_v04_samples_seeded_pump_process_models_and_parameters():
     assert vfd_pump_count >= 20
     assert len(vfd_parameters) >= 20
     assert json.dumps(suite["generation"]["asset_profiles"], sort_keys=True) == profile_definitions
+
+
+def test_training_v05_samples_versioned_static_head_parameters():
+    import yaml
+
+    suite = yaml.safe_load(Path("suites/training-v0.5.yaml").read_text(encoding="utf-8"))
+    counts = 0
+    observed = set()
+    for seed in range(240):
+        rng = np.random.default_rng(seed)
+        data = _generate_suite_scenario(suite["scenario"], suite["generation"], rng, f"vfd-static-{seed}")
+        data = _resolve_ranges(data, rng)
+        Scenario.model_validate(data)
+        for asset in data["assets"]:
+            if asset.get("process_profile") == "centrifugal_vfd":
+                counts += 1
+                assert asset["process_profile_version"] == "1.1.0"
+                params = asset["process_parameters"]
+                assert 0.0 <= params["pump_static_head_fraction"] <= 0.3
+                assert 1.2 <= params["pump_shutoff_head_ratio"] <= 1.5
+                observed.add((params["pump_static_head_fraction"], params["pump_shutoff_head_ratio"]))
+                model = AssetSpec.model_validate(asset)
+                for regime in ("LOW_LOAD", "NORMAL_LOAD", "HIGH_LOAD"):
+                    signals = simulate_step(
+                        model, ProcessState(temperature=22), regime, 60, 22,
+                        np.random.default_rng(seed + len(observed)),
+                    )
+                    assert all(np.isfinite(value) for value in signals.values())
+                    assert 0 <= signals["flow_l_min"] <= 3000
+                    assert 0 <= signals["pressure_bar"] <= 30
+                    assert 0 <= signals["motor_current_a"] <= 100
+    assert counts >= 20
+    assert len(observed) >= 20
+
+
+def test_hidden_challenge_v04_samples_static_head_pump_version():
+    import yaml
+
+    suite = yaml.safe_load(Path("suites/challenge-v0.4.yaml").read_text(encoding="utf-8"))
+    found = False
+    for seed in range(500):
+        rng = np.random.default_rng(seed)
+        data = _generate_suite_scenario(suite["scenario"], suite["generation"], rng, f"static-head-{seed}")
+        data = _resolve_ranges(data, rng)
+        Scenario.model_validate(data)
+        for asset in data["assets"]:
+            if asset.get("process_profile") == "centrifugal_vfd":
+                found = True
+                assert asset["process_profile_version"] == "1.1.0"
+                assert 0.0 <= asset["process_parameters"]["pump_static_head_fraction"] <= 0.4
+                assert 1.15 <= asset["process_parameters"]["pump_shutoff_head_ratio"] <= 1.6
+                break
+        if found:
+            break
+    assert found
 
 
 def test_hidden_challenge_samples_vfd_without_disclosing_process_profile(tmp_path):

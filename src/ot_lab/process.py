@@ -19,7 +19,7 @@ SIGNAL_META: dict[str, dict[str, tuple[str, str, float, float]]] = {
         "cycle_state": ("state", "code", 0, 4),
     },
     "pump": {
-        "rpm": ("rotational_speed", "rpm", 0, 5000),
+        "rpm": ("rotational_speed", "rpm", 0, 3600),
         "motor_current_a": ("current", "A", 0, 100),
         "motor_temperature_c": ("temperature", "degC", 0, 120),
         "vibration_mm_s": ("vibration", "mm/s", 0, 25),
@@ -204,21 +204,45 @@ def _simulate_centrifugal_vfd(
         "pump_power_factor": 0.85,
         "pump_idle_current_a": 4.0,
         "pump_temperature_rise_c": 45.0,
+        "pump_static_head_fraction": 0.0,
+        "pump_shutoff_head_ratio": 1.25,
     }
     parameters.update(asset.process_parameters)
     noise_scale = asset.process_parameters.get("sensor_noise_scale", 1.0)
     thermal_scale = asset.process_parameters.get("thermal_time_constant_scale", 1.0)
     state.rpm = parameters["pump_rated_speed_rpm"] * state.load
     ratio = max(state.rpm, 0.0) / parameters["pump_rated_speed_rpm"]
-    flow = parameters["pump_rated_flow_l_min"] * ratio
-    pressure = parameters["pump_rated_pressure_bar"] * ratio**2
+    rated_flow = parameters["pump_rated_flow_l_min"]
+    rated_pressure = parameters["pump_rated_pressure_bar"]
+    if asset.process_profile_version == "1.0.0":
+        flow_ratio = ratio
+        pressure = rated_pressure * ratio**2
+    else:
+        # Fit a quadratic pump curve through the rated duty point and a
+        # configurable shutoff head, then intersect it with the system curve.
+        # This captures static head while retaining the affinity-law limit when
+        # static_head_fraction is zero. Both curve shape inputs are explicit
+        # scenario parameters, not estimates of any particular pump.
+        static_head = rated_pressure * parameters["pump_static_head_fraction"]
+        shutoff_head = rated_pressure * parameters["pump_shutoff_head_ratio"]
+        denominator = shutoff_head - static_head
+        available_head = shutoff_head * ratio**2 - static_head
+        flow_ratio = float(np.sqrt(max(available_head, 0.0) / denominator))
+        pressure = (
+            static_head + (rated_pressure - static_head) * flow_ratio**2
+            if available_head > 0
+            else min(static_head, shutoff_head * ratio**2)
+        )
+    flow = rated_flow * flow_ratio
     hydraulic_power_kw = flow * pressure / 600.0
+    rated_hydraulic_power_kw = rated_flow * rated_pressure / 600.0
+    hydraulic_power_ratio = hydraulic_power_kw / rated_hydraulic_power_kw
     electrical_power_w = hydraulic_power_kw * 1000.0 / parameters["pump_total_efficiency"]
     current = parameters["pump_idle_current_a"] + electrical_power_w / (
         3**0.5 * parameters["pump_supply_voltage_v"] * parameters["pump_power_factor"]
     )
     state.temperature += (
-        ambient_c + parameters["pump_temperature_rise_c"] * ratio**3 - state.temperature
+        ambient_c + parameters["pump_temperature_rise_c"] * hydraulic_power_ratio - state.temperature
     ) * (1.0 - np.exp(-max(dt, 0.0) / (100.0 * thermal_scale)))
     noise = lambda scale: float(rng.normal(0.0, scale * noise_scale))
     result = {
@@ -309,5 +333,8 @@ def _simulate_metropt3_rail_apu(
     return result
 
 
-def signal_metadata(asset_class: str) -> dict[str, tuple[str, str, float, float]]:
-    return {name: (meta[0], meta[1], meta[2], meta[3]) for name, meta in SIGNAL_META[asset_class].items()}
+def signal_metadata(asset_class: str, process_profile: str = "generic") -> dict[str, tuple[str, str, float, float]]:
+    result = {name: (meta[0], meta[1], meta[2], meta[3]) for name, meta in SIGNAL_META[asset_class].items()}
+    if asset_class == "pump" and process_profile == "centrifugal_vfd":
+        result["rpm"] = ("rotational_speed", "rpm", 0, 5000)
+    return result
