@@ -25,51 +25,60 @@ def _time(value: Any) -> datetime:
 
 def _alert_episodes(
     selected: list[dict[str, Any]], alert_merge_gap_seconds: float
-) -> dict[str, list[tuple[datetime, datetime]]]:
+) -> dict[str, list[list[tuple[datetime, datetime]]]]:
     intervals_by_asset: dict[str, list[tuple[datetime, datetime]]] = {}
     for row in selected:
         intervals_by_asset.setdefault(row["asset_id"], []).append(
             (_time(row["window_start"]), _time(row["window_end"]))
         )
-    episodes_by_asset: dict[str, list[tuple[datetime, datetime]]] = {}
+    episodes_by_asset: dict[str, list[list[tuple[datetime, datetime]]]] = {}
     for asset_id, intervals in intervals_by_asset.items():
-        episodes: list[list[datetime]] = []
+        episodes: list[list[tuple[datetime, datetime]]] = []
         for start, end in sorted(intervals):
-            if episodes and start <= episodes[-1][1] + timedelta(seconds=alert_merge_gap_seconds):
-                episodes[-1][1] = max(episodes[-1][1], end)
+            if episodes and start <= max(right for _, right in episodes[-1]) + timedelta(seconds=alert_merge_gap_seconds):
+                episodes[-1].append((start, end))
             else:
-                episodes.append([start, end])
-        episodes_by_asset[asset_id] = [(start, end) for start, end in episodes]
+                episodes.append([(start, end)])
+        episodes_by_asset[asset_id] = episodes
     return episodes_by_asset
 
 
 def _one_to_one_event_matches(
     events: list[dict[str, Any]],
     matched_events: list[dict[str, Any]],
-    episodes_by_asset: dict[str, list[tuple[datetime, datetime]]],
+    episodes_by_asset: dict[str, list[list[tuple[datetime, datetime]]]],
     overlap: float,
 ) -> dict[int, int]:
     """Match qualified events only to episodes that individually meet the overlap threshold."""
-    eligible_event_indices = {
-        index for index, event in enumerate(matched_events) if event["coverage_threshold_met"]
-    }
     episode_records = [
-        (asset_id, start, end)
+        (asset_id, intervals)
         for asset_id, episodes in sorted(episodes_by_asset.items())
-        for start, end in episodes
+        for intervals in episodes
     ]
     event_intervals = [
         (_time(event.get("observed_start", event["start"])), _time(event.get("observed_end", event["end"])))
         for event in events
     ]
     candidates: list[list[int]] = []
-    for asset_id, start, end in episode_records:
+    for asset_id, intervals in episode_records:
         overlapping = []
         for index, event in enumerate(events):
-            if index not in eligible_event_indices or event["asset_id"] != asset_id:
+            if event["asset_id"] != asset_id:
                 continue
             event_start, event_end = event_intervals[index]
-            overlap_s = (min(end, event_end) - max(start, event_start)).total_seconds()
+            covered: list[tuple[datetime, datetime]] = []
+            for start, end in intervals:
+                left, right = max(start, event_start), min(end, event_end)
+                if right > left:
+                    covered.append((left, right))
+            covered.sort()
+            merged: list[list[datetime]] = []
+            for left, right in covered:
+                if merged and left <= merged[-1][1]:
+                    merged[-1][1] = max(merged[-1][1], right)
+                else:
+                    merged.append([left, right])
+            overlap_s = sum((right - left).total_seconds() for left, right in merged)
             event_duration_s = max((event_end - event_start).total_seconds(), 1e-9)
             if overlap_s > 0 and overlap_s / event_duration_s >= overlap:
                 overlapping.append((overlap_s, index))

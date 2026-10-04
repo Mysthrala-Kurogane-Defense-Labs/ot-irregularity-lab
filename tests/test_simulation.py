@@ -11,7 +11,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from ot_lab.evaluation import _timestamp_scores, evaluate
+from ot_lab.evaluation import _event_detection_metrics, _timestamp_scores, evaluate
 from ot_lab.models import Anomaly, AssetSpec, Scenario
 from ot_lab.process import ProcessState, regime_at, simulate_step
 from ot_lab.simulation import (
@@ -171,6 +171,24 @@ def test_fragmented_alerts_must_individually_meet_event_coverage_threshold(tmp_p
     assert result["event_detection_rate"] == 0
     assert result["true_positive_alert_episodes"] == 0
     assert result["false_positive_alert_episodes"] == 2
+
+
+def test_alert_merge_gap_does_not_count_gap_as_event_coverage():
+    event_start = datetime(2024, 1, 1, tzinfo=UTC)
+    event_end = event_start + timedelta(seconds=100)
+    event = {"event_id": "gap-coverage", "asset_id": "ASSET-01", "type": "sensor_bias",
+             "start": event_start.isoformat(), "end": event_end.isoformat(),
+             "observed_start": event_start.isoformat(), "observed_end": event_end.isoformat()}
+    predictions = pl.DataFrame([
+        {"asset_id": "ASSET-01", "window_start": event_start.isoformat(),
+         "window_end": (event_start + timedelta(seconds=4)).isoformat(), "irregularity_score": 0.9},
+        {"asset_id": "ASSET-01", "window_start": (event_start + timedelta(seconds=6)).isoformat(),
+         "window_end": (event_start + timedelta(seconds=10)).isoformat(), "irregularity_score": 0.9},
+    ])
+    result = _event_detection_metrics([event], predictions, 0.5, 0.1, 1.0, 2.0)
+    assert result["alert_episode_count"] == 1
+    assert result["events"][0]["coverage"] == pytest.approx(0.08)
+    assert result["event_detection_rate"] == 0
 
 
 def test_one_alert_episode_cannot_claim_multiple_ground_truth_events(tmp_path):
