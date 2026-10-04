@@ -251,3 +251,133 @@ def write_zema_hydraulic_analysis(input_path: Path, output_path: Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     return output_path
+
+
+def analyze_bosch_cnc(input_dir: Path, source_revision: str | None = None) -> dict[str, Any]:
+    """Summarize per-segment Bosch CNC acceleration RMS without retaining samples.
+
+    h5py is an optional calibration dependency. Source labels are preserved as
+    good/bad process annotations and must not be interpreted as fault types.
+    """
+    try:
+        import h5py
+    except ImportError as exc:
+        raise RuntimeError("Bosch CNC analysis requires the optional dependency: uv sync --extra calibration") from exc
+    if not input_dir.is_dir():
+        raise FileNotFoundError(input_dir)
+
+    import re
+
+    pattern = re.compile(r"(M0[123])/(OP\d{2})/(good|bad)/\1_(Oct|Feb|Aug)_(\d{4})_\2_(\d+)\.h5")
+    files = sorted(input_dir.rglob("*.h5"))
+    if not files:
+        raise ValueError("Bosch CNC input directory contains no .h5 files")
+    grouped: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
+    manifest_digest = hashlib.sha256()
+    total_bytes = 0
+    label_counts = {"good": 0, "bad": 0}
+    machine_counts: dict[str, dict[str, int]] = {}
+    for path in files:
+        relative = path.relative_to(input_dir).as_posix()
+        match = pattern.fullmatch(relative)
+        if not match:
+            raise ValueError(f"unexpected Bosch CNC HDF5 path: {relative}")
+        machine, operation, label, month, year, _example = match.groups()
+        file_hash = _sha256(path)
+        manifest_digest.update(relative.encode("utf-8") + b"\0" + bytes.fromhex(file_hash))
+        total_bytes += path.stat().st_size
+        try:
+            with h5py.File(path, "r") as source:
+                if "vibration_data" not in source:
+                    raise ValueError(f"missing vibration_data dataset: {relative}")
+                data = source["vibration_data"]
+                if data.ndim != 2 or data.shape[1] != 3 or data.shape[0] < 2 or data.dtype.kind not in "fiu":
+                    raise ValueError(f"expected an N x 3 numeric vibration array: {relative}")
+                sample_count = int(data.shape[0])
+                vector_square_sum = 0.0
+                remaining = sample_count
+                chunk_size = 65_536
+                for start in range(0, data.shape[0], chunk_size):
+                    chunk = np.asarray(data[start : start + chunk_size], dtype=np.float64)
+                    if not np.isfinite(chunk).all():
+                        raise ValueError(f"non-finite vibration sample: {relative}")
+                    if start == 0:
+                        axis_sum = np.zeros(3, dtype=np.float64)
+                    axis_sum += np.square(chunk).sum(axis=0)
+                    vector_square_sum += np.square(chunk).sum()
+                axis_rms = np.sqrt(axis_sum / remaining).tolist()
+                vector_rms = float(np.sqrt(vector_square_sum / remaining))
+        except OSError as exc:
+            raise ValueError(f"invalid HDF5 source file: {relative}") from exc
+        record = {
+            "axis_rms": axis_rms,
+            "vector_rms": vector_rms,
+            "samples": sample_count,
+            "duration_s": sample_count / 2000,
+        }
+        grouped.setdefault((machine, operation, label, f"{month}_{year}"), []).append(record)
+        label_counts[label] += 1
+        machine_counts.setdefault(machine, {"good": 0, "bad": 0})[label] += 1
+
+    groups: list[dict[str, Any]] = []
+    suppressed_singleton_groups = 0
+    for (machine, operation, label, timeframe), items in sorted(grouped.items()):
+        if len(items) < 2:
+            suppressed_singleton_groups += 1
+            continue
+        vector = np.array([item["vector_rms"] for item in items])
+        axes = np.array([item["axis_rms"] for item in items])
+        durations = np.array([item["duration_s"] for item in items])
+        groups.append(
+            {
+                "machine": machine,
+                "operation": operation,
+                "source_label": label,
+                "timeframe": timeframe,
+                "files": len(items),
+                "duration_s_p05_p50_p95": _quantiles(durations),
+                "vector_rms_p05_p50_p95": _quantiles(vector),
+                "axis_rms_p05_p50_p95": {
+                    axis: _quantiles(axes[:, index]) for index, axis in enumerate(("x", "y", "z"))
+                },
+            }
+        )
+    return {
+        "analysis_version": "1.0.0",
+        "source": {
+            "dataset": "Bosch CNC Machining Dataset",
+            "repository": "https://github.com/boschresearch/CNC_Machining",
+            "publisher": "Bosch Research; UCI Machine Learning Repository record 752",
+            "doi": "10.1016/j.procir.2022.04.022",
+            "license": "CC BY 4.0 for the data directory",
+            "source_revision": source_revision,
+            "input_files": len(files),
+            "input_bytes": total_bytes,
+            "input_manifest_sha256": manifest_digest.hexdigest(),
+            "sampling_hz": 2000,
+            "axis_count": 3,
+            "sample_unit": "not specified in the HDF5 files; RMS values remain in source units",
+        },
+        "label_counts": label_counts,
+        "machine_label_counts": machine_counts,
+        "grouping": ["machine", "operation", "source good/bad label", "six-month timeframe identifier"],
+        "segment_aggregates": groups,
+        "privacy_suppression": {
+            "minimum_segments_per_group": 2,
+            "suppressed_singleton_groups": suppressed_singleton_groups,
+        },
+        "interpretation": [
+            "The source labels indicate manually annotated process condition and do not identify a specific fault mechanism or fault onset time.",
+            "Vibration RMS is a descriptive feature of each operation segment; different machines, tools, and timeframes are not interchangeable baselines.",
+            "The source provides acceleration data, not the Lab's velocity vibration signal in mm/s; absolute values must not be mapped to the canonical signal.",
+            "The good/bad classes are strongly imbalanced and their counts are not failure prevalence estimates.",
+            "This analysis emits group quantiles only for groups of at least two segments; singleton groups are suppressed, and source samples or segment-level measurements are not emitted.",
+        ],
+    }
+
+
+def write_bosch_cnc_analysis(input_dir: Path, output_path: Path, source_revision: str | None = None) -> Path:
+    report = analyze_bosch_cnc(input_dir, source_revision)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
+    return output_path

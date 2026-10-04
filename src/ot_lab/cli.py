@@ -7,7 +7,11 @@ import json
 from pathlib import Path
 
 from . import __version__
-from .calibration import write_metropt_analysis, write_zema_hydraulic_analysis
+from .calibration import (
+    write_bosch_cnc_analysis,
+    write_metropt_analysis,
+    write_zema_hydraulic_analysis,
+)
 from .datasets import package_dataset
 from .evaluation import evaluate
 from .simulation import batch, generate_challenge, read_scenario, replay, write_run
@@ -57,6 +61,10 @@ def main() -> None:
     hydraulic_cmd = calibration_sub.add_parser("analyze-hydraulic", help="summarize UCI ZeMA hydraulic test-rig cycles by condition")
     hydraulic_cmd.add_argument("--input", type=Path, required=True, help="locally obtained UCI dataset 447 ZIP archive")
     hydraulic_cmd.add_argument("--output", type=Path, required=True, help="aggregate JSON report path")
+    bosch_cmd = calibration_sub.add_parser("analyze-bosch-cnc", help="summarize Bosch CNC acceleration RMS by process group")
+    bosch_cmd.add_argument("--input-dir", type=Path, required=True, help="locally obtained Bosch CNC data directory")
+    bosch_cmd.add_argument("--source-revision", help="Git commit of the source dataset for provenance")
+    bosch_cmd.add_argument("--output", type=Path, required=True, help="aggregate JSON report path")
     benchmark_cmd = commands.add_parser("benchmark", help="score model predictions for a generated run")
     benchmark_cmd.add_argument("--run", type=Path, required=True, help="run directory containing ground_truth.json")
     benchmark_cmd.add_argument("--predictions", type=Path, required=True, help="JSONL model output")
@@ -120,6 +128,8 @@ def main() -> None:
             print(write_metropt_analysis(args.input, args.output))
         elif args.calibration_command == "analyze-hydraulic":
             print(write_zema_hydraulic_analysis(args.input, args.output))
+        elif args.calibration_command == "analyze-bosch-cnc":
+            print(write_bosch_cnc_analysis(args.input_dir, args.output, args.source_revision))
     elif args.command == "benchmark":
         result = evaluate(args.run / "ground_truth.json", args.predictions, args.output, args.threshold, args.overlap, args.run / "telemetry.parquet", args.run / "run_metadata.json")
         print(json.dumps({key: value for key, value in result.items() if key != "events"}, indent=2))
