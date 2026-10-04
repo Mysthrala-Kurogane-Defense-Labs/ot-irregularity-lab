@@ -20,6 +20,25 @@ AnomalyType = Literal[
     "maintenance_activity",
 ]
 
+_ANOMALY_PARAMETER_KEYS = {
+    "sensor_drift": {"signal", "rate_per_minute", "onset_delay_power"},
+    "sudden_spike": {"signal", "magnitude"},
+    "bearing_degradation": {"vibration_gain", "temperature_gain", "progression", "onset_delay_power"},
+    "cavitation": {"vibration_gain", "flow_loss", "pressure_loss", "current_gain", "onset_delay_power"},
+    "cooling_degradation": {"temperature_gain", "onset_delay_power"},
+    "mechanical_overload": {"current_gain", "vibration_gain", "onset_delay_power"},
+    "sensor_stuck": {"signal"},
+    "sensor_bias": {"signal", "bias"},
+    "missing_telemetry": {"loss_pct", "signal", "signals", "tag_selection", "tag_count", "tag_weights"},
+    "single_signal_loss": {"loss_pct", "signal", "signals"},
+    "asset_communication_loss": {"loss_pct", "signal", "signals", "tag_selection", "tag_count", "tag_weights"},
+    "quality_degradation": set(),
+    "regime_mismatch": {"load_multiplier", "onset_delay_power"},
+    "multivariate_novelty": {"signal_a", "signal_b", "signal_a_pct", "signal_b_pct"},
+    "air_leak": {"pressure_loss_fraction", "current_gain", "progression", "onset_delay_power"},
+    "maintenance_activity": {"load_multiplier", "onset_delay_power"},
+}
+
 
 class Anomaly(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -34,7 +53,70 @@ class Anomaly(BaseModel):
 
     @field_validator("parameters")
     @classmethod
-    def validate_parameter_maps(cls, value: dict[str, Any]) -> dict[str, Any]:
+    def validate_parameter_maps(cls, value: dict[str, Any], info: Any) -> dict[str, Any]:
+        anomaly_type = info.data.get("type")
+        allowed = _ANOMALY_PARAMETER_KEYS.get(anomaly_type, set())
+        unknown = set(value) - allowed
+        if unknown:
+            raise ValueError(f"unknown parameters for {anomaly_type}: {', '.join(sorted(unknown))}")
+        numeric_keys = {
+            "rate_per_minute", "magnitude", "vibration_gain", "temperature_gain", "flow_loss",
+            "pressure_loss", "current_gain", "bias", "loss_pct", "tag_count", "load_multiplier",
+            "signal_a_pct", "signal_b_pct", "pressure_loss_fraction",
+        }
+        for key in numeric_keys & value.keys():
+            parameter = value[key]
+            if isinstance(parameter, bool) or not isinstance(parameter, (int, float)) or not float("-inf") < parameter < float("inf"):
+                raise ValueError(f"{key} must be a finite number")
+        for key in {"vibration_gain", "temperature_gain", "flow_loss", "pressure_loss", "current_gain"} & value.keys():
+            if value[key] < 0:
+                raise ValueError(f"{key} must be non-negative")
+        for key in {"flow_loss", "pressure_loss", "pressure_loss_fraction"} & value.keys():
+            if value[key] > 1:
+                raise ValueError(f"{key} must be within 0..1")
+        for key in {"signal_a_pct", "signal_b_pct"} & value.keys():
+            if not 0 <= value[key] <= 1:
+                raise ValueError(f"{key} must be within 0..1")
+        if "loss_pct" in value and not 0 <= value["loss_pct"] <= 100:
+            raise ValueError("loss_pct must be within 0..100")
+        if "load_multiplier" in value and not 0 <= value["load_multiplier"] <= 1:
+            raise ValueError("load_multiplier must be within 0..1")
+        if "tag_count" in value and (value["tag_count"] < 1 or int(value["tag_count"]) != value["tag_count"]):
+            raise ValueError("tag_count must be a positive integer")
+        if "progression" in value and (
+            not isinstance(value["progression"], str)
+            or value["progression"] not in {"linear", "slow_start", "fast_start"}
+        ):
+            raise ValueError("progression must be linear, slow_start, or fast_start")
+        if "tag_selection" in value and (
+            not isinstance(value["tag_selection"], str)
+            or value["tag_selection"] not in {"all", "single", "multiple", "weighted"}
+        ):
+            raise ValueError("tag_selection must be all, single, multiple, or weighted")
+        for key in {"signal", "signal_a", "signal_b"} & value.keys():
+            if not isinstance(value[key], str) or not value[key]:
+                raise ValueError(f"{key} must be a string")
+        if "signals" in value and (
+            not isinstance(value["signals"], list)
+            or any(not isinstance(name, str) or not name for name in value["signals"])
+        ):
+            raise ValueError("signals must be a list of tag names")
+        if anomaly_type == "single_signal_loss" and "signals" in value and len(value["signals"]) != 1:
+            raise ValueError("single_signal_loss must select exactly one signal")
+        if "signal" in value and "signals" in value:
+            raise ValueError("use either signal or signals, not both")
+        if ("signal" in value or "signals" in value) and any(key in value for key in ("tag_selection", "tag_count", "tag_weights")):
+            raise ValueError("explicit signal selection cannot be combined with tag selection parameters")
+        if "tag_weights" in value and value.get("tag_selection") != "weighted":
+            raise ValueError("tag_weights requires tag_selection=weighted")
+        if value.get("tag_selection") == "weighted" and "tag_weights" not in value and "signal" not in value and "signals" not in value:
+            raise ValueError("weighted tag_selection requires tag_weights")
+        if "tag_count" in value and value.get("tag_selection") != "multiple":
+            raise ValueError("tag_count requires tag_selection=multiple")
+        if "signal_a_pct" in value and "signal_a" not in value:
+            raise ValueError("signal_a_pct requires signal_a")
+        if "signal_b_pct" in value and "signal_b" not in value:
+            raise ValueError("signal_b_pct requires signal_b")
         onset_delay_power = value.get("onset_delay_power")
         if onset_delay_power is not None and (
             isinstance(onset_delay_power, bool)
@@ -46,7 +128,7 @@ class Anomaly(BaseModel):
         weights = value.get("tag_weights")
         if weights is not None and (
             not isinstance(weights, dict)
-            or any(not isinstance(weight, (int, float)) or not float("-inf") < weight < float("inf") or weight < 0 for weight in weights.values())
+            or any(isinstance(weight, bool) or not isinstance(weight, (int, float)) or not float("-inf") < weight < float("inf") or weight < 0 for weight in weights.values())
             or sum(weights.values()) <= 0
         ):
             raise ValueError("tag_weights must contain finite, non-negative values with a positive total")

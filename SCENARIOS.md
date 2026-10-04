@@ -31,7 +31,32 @@ anomalies:
       temperature_gain: 0.08
 ```
 
-The initial implementation applies deterministic effects for each defined type; cadence/rate loss is configured by numeric parameters. Expand scenario coverage with tests and document the affected signals for each asset class.
+Each event type accepts a documented parameter set, and unknown parameter names fail scenario validation instead of silently using defaults.
+
+## Anomaly parameter contract
+
+Signal names are checked against the selected asset during simulation. Numeric gains are non-negative; `bias`, `magnitude`, and `rate_per_minute` are signed values in the selected signal's units (`rate_per_minute` is per minute). Fractions and percentages have the bounds shown below.
+
+| Type | Accepted parameters |
+| --- | --- |
+| `sensor_drift` | `signal`, `rate_per_minute`, `onset_delay_power` |
+| `sudden_spike` | `signal`, `magnitude` |
+| `bearing_degradation` | `vibration_gain`, `temperature_gain`, `progression`, `onset_delay_power` |
+| `cavitation` | `vibration_gain`, `flow_loss` (0..1), `pressure_loss` (0..1), `current_gain`, `onset_delay_power` |
+| `cooling_degradation` | `temperature_gain`, `onset_delay_power` |
+| `mechanical_overload` | `current_gain`, `vibration_gain`, `onset_delay_power` |
+| `sensor_stuck` | `signal` |
+| `sensor_bias` | `signal`, `bias` |
+| `missing_telemetry` | `loss_pct` (0..100), `signal` or `signals`, or `tag_selection`, `tag_count`, `tag_weights` |
+| `single_signal_loss` | `loss_pct` (0..100), `signal` or `signals` |
+| `asset_communication_loss` | `loss_pct` (0..100), `signal` or `signals`, or `tag_selection`, `tag_count`, `tag_weights` |
+| `quality_degradation` | none; severity sets the per-sample BAD-quality probability |
+| `regime_mismatch` | `load_multiplier` (0..1), `onset_delay_power` |
+| `multivariate_novelty` | `signal_a` with optional `signal_a_pct` (0..1), `signal_b` with optional `signal_b_pct` (0..1) |
+| `air_leak` | `pressure_loss_fraction` (0..1), `current_gain`, `progression`, `onset_delay_power` |
+| `maintenance_activity` | `load_multiplier` (0..1), `onset_delay_power` |
+
+`progression` accepts `linear`, `slow_start`, or `fast_start`. `onset_delay_power` is finite in 0..4. `tag_count` is a positive integer and requires `tag_selection: multiple`; weighted selection requires a non-empty `tag_weights` map. Use either one `signal` or a `signals` list, not both. Parameters such as gains remain benchmark design inputs rather than calibrated fault limits; each suite must declare numeric ranges and their provenance.
 
 For `missing_telemetry`, use `loss_pct` with optional `signal`, `signals`, or a deterministic tag-selection policy. `tag_selection` accepts `all` (default), `single`, or `multiple`; `tag_count` sets the number selected for `multiple`. Selection is stable for the same seed/event/sample. `single_signal_loss` accepts `signal` or `signals`; otherwise it selects one tag. Unknown tags and impossible counts fail validation during simulation. For a full asset communication outage, use `asset_communication_loss`.
 

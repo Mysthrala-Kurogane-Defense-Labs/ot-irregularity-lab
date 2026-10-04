@@ -5,6 +5,7 @@
 - Add `metropt3_rail_apu` process profile v1.1.0, which distinguishes stopped `OFF` current from approximately 4 A offloaded `IDLE` current and samples one approximately 9 A startup value using UCI's published variable description; profile v1.0.0 retains its prior output for replay compatibility. Startup pulse duration remains an explicit one-sample approximation because source cadence is about 10 seconds.
 - Add an architecture regression test that rejects common detector-framework dependencies/imports in the simulator package, preserving the model-agnostic boundary.
 - Make the `very_hard` difficulty profile apply a numeric quadratic onset delay to progressive fault families while retaining its configured 5% peak magnitude; reject invalid onset powers.
+- Validate anomaly parameter names and domains by fault type, rejecting silent no-op keys and incompatible tag-selection combinations while allowing signed sensor drift.
 - Bump simulator package to `0.6.0` for the versioned process-model change; telemetry and ground-truth schemas remain unchanged.
 - Add seeded per-asset process-profile sampling for versioned training and hidden-challenge suites. Training v0.4 and challenge v0.3 sample generic or centrifugal VFD pump models with numeric ranges; manifests record realized profile distributions.
 - Stop suite asset-profile sampling from mutating the reusable suite definition; add regression coverage for multi-seed generation.

@@ -1087,7 +1087,7 @@ def test_discrete_effect_severity_scales_effect_frequency(kind):
         event = Anomaly(
             type=kind, asset="P-1", start=0, duration=10,
             severity=severity,
-            parameters={"loss_pct": 80, "tag_selection": "single"} if kind == "single_signal_loss" else {"loss_pct": 80},
+            parameters={"loss_pct": 80} if kind != "quality_degradation" else {},
         )
         for sample_index in range(2000):
             _row, affected, quality = _affect(
@@ -1164,7 +1164,11 @@ def test_missing_telemetry_supports_configurable_tag_selection(selection, count)
     scenario = Scenario.model_validate({**fixture_scenario().model_dump(), "sampling_jitter_ms": 0, "anomalies": [{
         "type": "missing_telemetry", "asset": "ASSET-01", "start": 5,
         "duration": 5, "severity": 1.0,
-        "parameters": {"loss_pct": 100, "tag_selection": selection, "tag_count": count},
+            "parameters": {
+                "loss_pct": 100,
+                "tag_selection": selection,
+                **({"tag_count": count} if selection == "multiple" else {}),
+            },
     }]})
     telemetry, truth, _ = simulate(scenario, 88)
     selected = truth["events"][0]["affected_signals"]
@@ -1191,6 +1195,29 @@ def test_loss_selection_rejects_unknown_and_impossible_tag_counts():
     with pytest.raises(ValueError, match="tag_weights"):
         Anomaly(type="missing_telemetry", asset="P-1", start=0, duration=1,
                 parameters={"tag_selection": "weighted", "tag_weights": {"motor_current_a": -1}})
+
+
+@pytest.mark.parametrize(("kind", "parameters", "message"), [
+    ("sensor_bias", {"bais": 1.0}, "unknown parameters"),
+    ("missing_telemetry", {"loss_pct": 101}, "loss_pct must be within 0..100"),
+    ("bearing_degradation", {"progression": "gradual"}, "progression must be"),
+    ("missing_telemetry", {"tag_selection": "weighted"}, "weighted tag_selection requires"),
+    ("quality_degradation", {"threshold": 0.8}, "unknown parameters"),
+    ("cavitation", {"flow_loss": 1.1}, "flow_loss must be within 0..1"),
+    ("single_signal_loss", {"signals": ["motor_current_a", "pressure_bar"]}, "must select exactly one signal"),
+])
+def test_anomaly_parameters_are_type_checked_and_reject_silent_noops(kind, parameters, message):
+    with pytest.raises(ValueError, match=message):
+        Anomaly(type=kind, asset="P-1", start=0, duration=1, parameters=parameters)
+
+
+def test_sensor_drift_accepts_signed_rate_for_both_directions():
+    event = Anomaly(
+        type="sensor_drift", asset="P-1", start=0, duration=120, severity=1,
+        parameters={"signal": "pressure_bar", "rate_per_minute": -0.5},
+    )
+    row, _, _ = _affect(event, {"pressure_bar": 8.0}, 60, {}, "pump", 60, 1)
+    assert row["pressure_bar"] == pytest.approx(7.5)
 
 
 def test_weighted_missing_telemetry_tag_selection_is_seeded_and_respects_weights():
