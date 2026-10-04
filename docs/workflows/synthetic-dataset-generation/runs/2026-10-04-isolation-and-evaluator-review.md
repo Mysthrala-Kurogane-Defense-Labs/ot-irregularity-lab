@@ -1,5 +1,8 @@
 # Docker isolation and host evaluator review
 
+- Current branch commit: `9c3e6def18d2c83543ddd3ea21a8873f15378158`.
+- CI run: [37165887391](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/actions/runs/37165887391), core, OPC UA and Modbus jobs all passed on Python 3.12. PR #4 remains open; this report does not merge it.
+
 ## Objective
 
 Verify the local Docker submission boundary against the model-input requirements, review all `src/ot_lab` modules for source-backed security issues, and fix any confirmed issue that could make evaluation unavailable.
@@ -28,6 +31,6 @@ Verify the local Docker submission boundary against the model-input requirements
 
 - Acceptance: source review, local Docker smoke, output-cap smoke, prediction and event interval sweeps, and regression tests completed.
 - Residual security boundary: no test attempted Docker daemon compromise, host/VM escape, or kernel escape. `run-model` executes a local process and is not a security sandbox.
-- Publication: the interval-sweep change and this record are local working-tree changes. PR #4 still points to `df6f0ad`; its existing green CI does not validate these changes. Commit and push the patch, then require fresh CI before closing the reported finding.
+- Publication: commit `9c3e6de` is pushed to PR #4 and the latest Python 3.12 CI run passed. The security report remains an immutable scan of `df6f0ad`; its finding describes that historical source state. The scanner remediation control could not be updated from this checkout because it requires the scanned revision, but the fix is covered by WSL tests, structured review and PR CI.
 - Reusable lesson: bound host-side work after container execution as well as CPU, memory, time and output size inside the container. Model output and hidden event arrays remain untrusted inputs to host scoring.
-- Next action: commit and push the fix to PR #4, run CI, and update the security finding status only after the pushed revision is validated.
+- Next action: continue the source-backed asset calibration and randomized scenario work. Do not merge PR #4 without the user's instruction.
