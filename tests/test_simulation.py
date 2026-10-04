@@ -18,6 +18,7 @@ from ot_lab.simulation import (
     EPOCH,
     _affect,
     _generate_suite_scenario,
+    _resolve_ranges,
     batch,
     replay,
     simulate,
@@ -619,6 +620,59 @@ def test_centrifugal_vfd_scenario_generation_and_replay(tmp_path):
     assert (source_dir / "ground_truth.json").read_bytes() == (replay_dir / "ground_truth.json").read_bytes()
 
 
+def test_training_v04_samples_seeded_pump_process_models_and_parameters():
+    import yaml
+
+    suite = yaml.safe_load(Path("suites/training-v0.4.yaml").read_text(encoding="utf-8"))
+    profile_definitions = json.dumps(suite["generation"]["asset_profiles"], sort_keys=True)
+    vfd_parameters = set()
+    vfd_pump_count = 0
+    for seed in range(240):
+        rng = np.random.default_rng(seed)
+        data = _generate_suite_scenario(suite["scenario"], suite["generation"], rng, f"model-{seed}")
+        data = _resolve_ranges(data, rng)
+        Scenario.model_validate(data)
+        for asset in data["assets"]:
+            if asset.get("process_profile") == "centrifugal_vfd":
+                vfd_pump_count += 1
+                params = asset["process_parameters"]
+                assert 2800 <= params["pump_rated_speed_rpm"] <= 3000
+                assert 700 <= params["pump_rated_flow_l_min"] <= 800
+                assert 10 <= params["pump_rated_pressure_bar"] <= 12
+                vfd_parameters.add(tuple(sorted(params.items())))
+    assert vfd_pump_count >= 20
+    assert len(vfd_parameters) >= 20
+    assert json.dumps(suite["generation"]["asset_profiles"], sort_keys=True) == profile_definitions
+
+
+def test_hidden_challenge_samples_vfd_without_disclosing_process_profile(tmp_path):
+    import yaml
+
+    from ot_lab.simulation import generate_challenge
+
+    training = Path("suites/training-v0.4.yaml")
+    challenge = Path("suites/challenge-v0.3.yaml")
+    chosen_seed = None
+    challenge_suite = yaml.safe_load(challenge.read_text(encoding="utf-8"))
+    for seed in range(500):
+        rng = np.random.default_rng(seed)
+        data = _generate_suite_scenario(
+            challenge_suite["scenario"], challenge_suite["generation"], rng, "challenge-hidden",
+        )
+        data = _resolve_ranges(data, rng)
+        if any(asset.get("process_profile") == "centrifugal_vfd" for asset in data["assets"]):
+            chosen_seed = seed
+            break
+    assert chosen_seed is not None
+
+    case_dir, _ = generate_challenge(training, tmp_path, chosen_seed, challenge)
+    assert (case_dir / "telemetry.parquet").is_file()
+    assert not (case_dir / "scenario.yaml").exists()
+    metadata = json.loads((case_dir / "run_metadata.json").read_text(encoding="utf-8"))
+    assert "seed" not in metadata and "scenario_sha256" not in metadata
+    assert "centrifugal_vfd" not in json.dumps(metadata)
+
+
 def test_sampling_jitter_changes_intervals_deterministically():
     scenario = Scenario.model_validate({
         "scenario_id": "jitter", "duration_s": 20, "sampling_interval_ms": 1000,
@@ -833,6 +887,8 @@ def test_randomized_training_dataset_has_mixed_faults_and_auditable_partitions(t
     assert manifest["data_license"] == "CC-BY-4.0"
     assert manifest["generator_argv"][-1] == str(output)
     assert len(manifest["asset_distribution"]) == 4
+    assert sum(manifest["process_profile_distribution"].values()) == sum(manifest["asset_distribution"].values())
+    assert all(run["process_profiles"] for run in manifest["runs"])
     assert len(manifest["event_distribution"]) >= 12
     assert len(manifest["regime_episode_distribution"]) >= 4
     assert manifest["master_seed"] == 20261003

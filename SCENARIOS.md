@@ -8,6 +8,8 @@ Difficulty labels resolve to explicit numeric gain scales: easy 0.50, medium 0.2
 
 For generated multi-run datasets, `suites/training-v0.2.yaml` preserves the original 15-family distribution. `suites/training-v0.3.yaml` adds seeded `air_leak` scenarios with numeric distributions for onset, duration, severity, progression and signal effects. The generator samples settings from each run's independent seed and saves the resolved scenario beside that run. Research and licensing boundaries are described in [DATASET_PATTERN_REVIEW.md](DATASET_PATTERN_REVIEW.md).
 
+`suites/training-v0.4.yaml` adds a versioned per-asset process-profile distribution. It selects either the generic pump or the optional `centrifugal_vfd` model for each pump, and samples rated speed, flow, pressure, efficiency, electrical assumptions and thermal rise from explicit numeric ranges. Resolved values are stored in each run's scenario and the dataset manifest reports realized profile counts. `suites/challenge-v0.3.yaml` independently samples the same profile family and parameter ranges for ephemeral hidden cases; neither profile name nor parameters are exposed to the model container.
+
 ```yaml
 scenario_id: cnc-bearing-medium
 scenario_version: 1.0.0

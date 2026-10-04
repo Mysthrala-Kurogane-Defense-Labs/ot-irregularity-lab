@@ -102,12 +102,17 @@ def package_dataset(
     license_bytes = license_file.read_bytes()
     artifacts: dict[str, dict[str, Any]] = {}
     asset_distribution_by_partition: dict[str, dict[str, int]] = {name: {} for name in PARTITIONS}
+    process_profile_distribution_by_partition: dict[str, dict[str, int]] = {name: {} for name in PARTITIONS}
     for run in source_manifest.get("runs", []):
         partition_name = run.get("partition")
         if partition_name in asset_distribution_by_partition:
             distribution = asset_distribution_by_partition[partition_name]
             for asset_class in run.get("asset_classes", []):
                 distribution[asset_class] = distribution.get(asset_class, 0) + 1
+            process_distribution = process_profile_distribution_by_partition[partition_name]
+            for profile in run.get("process_profiles", []):
+                key = f"{profile['asset_class']}:{profile['profile']}@{profile['version']}"
+                process_distribution[key] = process_distribution.get(key, 0) + 1
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=f".{output.name}.package-", dir=output.parent) as temporary:
         stage = Path(temporary)
@@ -136,6 +141,7 @@ def package_dataset(
                 "class_distribution": source_manifest.get("class_distribution_by_partition", {}).get(partition, {}),
                 "event_distribution": source_manifest.get("event_distribution_by_partition", {}).get(partition, {}),
                 "asset_distribution": asset_distribution_by_partition.get(partition, {}),
+                "process_profile_distribution": process_profile_distribution_by_partition.get(partition, {}),
                 "artifact": {"path": f"{partition}.parquet", "sha256": content_hash, "bytes": source.stat().st_size},
                 "labels_artifact": {"path": f"{partition}-labels.zip"},
                 "contains_ground_truth": False,
@@ -210,6 +216,7 @@ def package_dataset(
                 "class_distribution": source_manifest.get("class_distribution_by_partition", {}).get(partition, {}),
                 "event_distribution": source_manifest.get("event_distribution_by_partition", {}).get(partition, {}),
                 "asset_distribution": asset_distribution_by_partition.get(partition, {}),
+                "process_profile_distribution": process_profile_distribution_by_partition.get(partition, {}),
             }
         release_manifest = {
             "release_manifest_version": "1.0.0",

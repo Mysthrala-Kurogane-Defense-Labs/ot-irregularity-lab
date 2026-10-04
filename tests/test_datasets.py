@@ -35,6 +35,7 @@ def test_partition_packages_are_deterministic_and_do_not_include_run_truth_or_se
     assert first_manifest["contains_ground_truth"] is False
     assert first_manifest["partitions"]["train"]["class_distribution"]["normal"] == 4
     assert first_manifest["partitions"]["train"]["asset_distribution"]["pump"] == 4
+    assert first_manifest["partitions"]["train"]["process_profile_distribution"]["pump:generic@1.0.0"] == 4
     for partition in ("train", "test"):
         package = first_manifest["partitions"][partition]["path"]
         assert (first / package).read_bytes() == (second / package).read_bytes()
@@ -48,6 +49,7 @@ def test_partition_packages_are_deterministic_and_do_not_include_run_truth_or_se
             assert inner["partition"] == partition
             assert inner["contains_run_seeds"] is False
             assert inner["contains_ground_truth"] is False
+            assert inner["process_profile_distribution"]["pump:generic@1.0.0"] == first_manifest["partitions"][partition]["run_count"]
             assert "master_seed" not in inner
             assert not any("ground_truth" in name or "scenario" in name or "run_metadata" in name for name in archive.namelist())
             assert archive.read("DATASET_LICENSE.txt") == license_file.read_bytes()

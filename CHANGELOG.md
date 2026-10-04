@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add seeded per-asset process-profile sampling for versioned training and hidden-challenge suites. Training v0.4 and challenge v0.3 sample generic or centrifugal VFD pump models with numeric ranges; manifests record realized profile distributions.
+- Stop suite asset-profile sampling from mutating the reusable suite definition; add regression coverage for multi-seed generation.
+- Record per-run and aggregate process-profile counts in dataset manifests and publish these aggregate counts with partition packages.
 - Add optional `centrifugal_vfd` pump process profile with parameter validation, coupled speed/flow/pressure/power/temperature behavior, and a runnable normal-operation scenario. Existing generic pump behavior is unchanged.
 - Bump simulator package to `0.5.0`; telemetry and ground-truth schema versions remain unchanged.
 - Add `ot-lab challenge --cases N` to evaluate independent runtime-generated hidden cases and persist pooled event/window metrics plus macro per-case PR-AUC only.

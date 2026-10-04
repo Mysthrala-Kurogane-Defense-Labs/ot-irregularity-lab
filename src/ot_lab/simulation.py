@@ -106,7 +106,23 @@ def _generate_suite_scenario(base: dict[str, Any], generation: dict[str, Any], r
     profiles = generation.get("asset_profiles", [])
     if profiles:
         profile = _weighted_choice(profiles, rng, "asset profiles")
-        data["assets"] = profile["assets"]
+        data["assets"] = json.loads(json.dumps(profile["assets"]))
+
+    process_profiles = generation.get("asset_process_profiles", [])
+    if process_profiles:
+        for asset in data["assets"]:
+            compatible = [
+                profile for profile in process_profiles
+                if asset["asset_class"] in profile.get("asset_classes", [asset["asset_class"]])
+            ]
+            if not compatible:
+                continue
+            profile = _weighted_choice(compatible, rng, f"process profiles for {asset['asset_id']}")
+            asset["process_profile"] = profile["process_profile"]
+            asset["process_profile_version"] = profile.get("process_profile_version", "1.0.0")
+            parameters = asset.setdefault("process_parameters", {})
+            for name, spec in profile.get("process_parameters", {}).items():
+                parameters[name] = _draw(spec, rng)
 
     regime_profiles = generation.get("regime_profiles", [])
     if regime_profiles:
@@ -831,6 +847,10 @@ def _batch_to_directory(
     class_distribution = {"normal": 0, "anomalous": 0}
     partition_class_distribution = {partition: {"normal": 0, "anomalous": 0} for partition in partitions}
     asset_distribution: dict[str, int] = {}
+    process_profile_distribution: dict[str, int] = {}
+    process_profile_distribution_by_partition: dict[str, dict[str, int]] = {
+        name: {} for name in partitions
+    }
     event_distribution: dict[str, int] = {}
     event_distribution_by_partition = {partition: {} for partition in partitions}
     regime_distribution: dict[str, int] = {}
@@ -870,6 +890,15 @@ def _batch_to_directory(
                 "scenario_version": scenario.scenario_version,
                 "asset_ids": [asset.asset_id for asset in scenario.assets],
                 "asset_classes": [asset.asset_class for asset in scenario.assets],
+                "process_profiles": [
+                    {
+                        "asset_id": asset.asset_id,
+                        "asset_class": asset.asset_class,
+                        "profile": asset.process_profile,
+                        "version": asset.process_profile_version,
+                    }
+                    for asset in scenario.assets
+                ],
                 "configured_shift_pattern": scenario.shift_pattern,
             })
             sample_class = "anomalous" if scenario.anomalies else "normal"
@@ -881,6 +910,10 @@ def _batch_to_directory(
                 partition_events[anomaly.type] = partition_events.get(anomaly.type, 0) + 1
             for asset in scenario.assets:
                 asset_distribution[asset.asset_class] = asset_distribution.get(asset.asset_class, 0) + 1
+                profile_key = f"{asset.asset_class}:{asset.process_profile}@{asset.process_profile_version}"
+                process_profile_distribution[profile_key] = process_profile_distribution.get(profile_key, 0) + 1
+                partition_profiles = process_profile_distribution_by_partition[partition]
+                partition_profiles[profile_key] = partition_profiles.get(profile_key, 0) + 1
     if tasks:
         if workers == 1:
             for scenario_data, run_seed, run_dir_text in tasks:
@@ -939,6 +972,8 @@ def _batch_to_directory(
         "class_distribution": class_distribution,
         "class_distribution_by_partition": partition_class_distribution,
         "asset_distribution": asset_distribution,
+        "process_profile_distribution": process_profile_distribution,
+        "process_profile_distribution_by_partition": process_profile_distribution_by_partition,
         "event_distribution": event_distribution,
         "event_distribution_by_partition": event_distribution_by_partition,
         "regime_episode_distribution": regime_distribution,
