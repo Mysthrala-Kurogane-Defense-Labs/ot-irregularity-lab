@@ -35,6 +35,10 @@ gitsign verify-tag \
 ```
 
 For dataset releases, use the `dataset-vX.Y.Z` tag as the final argument.
+GitHub's commit/tag UI does not currently mark Gitsign's Sigstore-backed
+signatures as its native **Verified** badge; consumers must verify the Sigstore
+certificate and transparency evidence with Gitsign. See the
+[Gitsign verification notes](https://github.com/sigstore/gitsign#verifying-commits).
 
 ## Release assets and dataset manifests
 
