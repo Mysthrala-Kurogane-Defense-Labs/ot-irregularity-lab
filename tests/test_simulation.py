@@ -1580,6 +1580,12 @@ with open(sys.argv[2], "w", encoding="utf-8") as output:
     assert rows[0]["event_detection_rate"] == 0
     assert rows[1]["event_detection_rate"] == 1
     assert rows[1]["window_precision"] == pytest.approx(4 / 30)
+    assert rows[1]["threshold"] == 0.5
+    assert rows[1]["overlap_threshold"] == 0.1
+    assert rows[1]["alert_merge_gap_seconds"] == 0.5
+    assert rows[1]["false_positives_per_asset_day"] == pytest.approx(rows[1]["false_positives_per_asset_hour"] * 24)
+    assert "mean_time_to_first_detection_s" in rows[1]
+    assert "event_type_metrics" in rows[1]
     assert all(path.exists() for path in prediction_paths)
 
 

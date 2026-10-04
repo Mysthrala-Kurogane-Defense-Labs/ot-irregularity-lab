@@ -195,10 +195,22 @@ def main() -> None:
         asyncio.run(replay_modbus(args.telemetry, args.host, args.port, args.device_id, realtime=not args.fast, stay_open=args.serve))
     elif args.command == "compare":
         rows = []
+        summary_keys = (
+            "metric_version", "threshold", "overlap_threshold", "alert_merge_gap_seconds",
+            "precision", "recall", "f1", "event_precision", "event_recall", "event_f1",
+            "pr_auc", "window_precision", "window_recall", "window_f1", "window_pr_auc",
+            "event_count", "true_positive_events", "missed_events", "event_detection_rate",
+            "alert_episode_count", "false_positive_alert_episodes",
+            "false_positive_alert_episodes_per_asset_hour", "false_positive_windows",
+            "false_positives_per_asset_hour", "false_positives_per_asset_day",
+            "false_positive_duration_s", "exposure_asset_hours", "mean_event_coverage",
+            "percentage_of_event_detected", "mean_time_to_first_detection_s",
+            "mean_detection_latency_s", "event_type_metrics",
+        )
         for prediction in args.predictions:
             model_output = args.output / prediction.stem
             metrics = evaluate(args.run / "ground_truth.json", prediction, model_output, args.threshold, args.overlap, args.run / "telemetry.parquet", args.run / "run_metadata.json", args.alert_merge_gap_seconds)
-            rows.append({"model": prediction.stem, "metric_version": metrics["metric_version"], "precision": metrics["precision"], "recall": metrics["recall"], "f1": metrics["f1"], "pr_auc": metrics["pr_auc"], "window_precision": metrics["window_precision"], "window_recall": metrics["window_recall"], "alert_episode_count": metrics["alert_episode_count"], "false_positive_alert_episodes": metrics["false_positive_alert_episodes"], "false_positive_windows": metrics["false_positive_windows"], "false_positives_per_asset_hour": metrics["false_positives_per_asset_hour"], "event_detection_rate": metrics["event_detection_rate"], "percentage_of_event_detected": metrics["percentage_of_event_detected"]})
+            rows.append({"model": prediction.stem, **{key: metrics[key] for key in summary_keys}})
         args.output.mkdir(parents=True, exist_ok=True)
         (args.output / "comparison.json").write_text(json.dumps(rows, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(rows, indent=2))
