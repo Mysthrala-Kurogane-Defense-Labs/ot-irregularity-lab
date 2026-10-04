@@ -1,0 +1,1182 @@
+{
+  "alert_merge_gap_seconds": 0,
+  "dataset": "OT Irregularity Dataset v0.4.0 public test partition",
+  "event_coverage_threshold": 0.1,
+  "methodology": "Re-score archived predictions only; detector training, threshold selection, and inference were not repeated. Event metrics require aggregate event coverage and the individually matched episode to meet the coverage threshold, then use one-to-one maximum-cardinality matching. Window-level PR-AUC and false-positive-window rates are unchanged from the previous run.",
+  "metric_version": "2.0.0",
+  "models": {
+    "ecod": {
+      "alert_episodes": 450,
+      "configuration": "ECOD contamination=0.1",
+      "event_f1_micro_v2": 0.0,
+      "event_precision_micro_v2": 0.0,
+      "event_recall_micro_v2": 0.0,
+      "event_runs": 30,
+      "events": 44,
+      "events_detected": 0,
+      "false_positive_alert_episodes": 450,
+      "false_positive_alert_episodes_per_asset_hour": 40.79063326199169,
+      "false_positive_windows": 519,
+      "false_positives_per_asset_hour": 47.045197028830415,
+      "library": "PyOD 3.6.6",
+      "mean_event_coverage_by_event": 0.009149894983826406,
+      "mean_window_pr_auc_unchanged": 0.18434659533926126,
+      "normal_false_positive_alert_episodes": 94,
+      "normal_false_positive_alert_episodes_per_asset_hour": 42.52324704699673,
+      "normal_false_positive_windows": 101,
+      "normal_false_positives_per_asset_hour": 45.68987182709223,
+      "normal_runs": 10,
+      "per_run": [
+        {
+          "alert_episodes": 2,
+          "event_count": 1,
+          "false_positive_alert_episodes": 2,
+          "false_positive_windows": 5,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00001"
+        },
+        {
+          "alert_episodes": 7,
+          "event_count": 2,
+          "false_positive_alert_episodes": 7,
+          "false_positive_windows": 6,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0310480460440039,
+          "run_id": "test-00002"
+        },
+        {
+          "alert_episodes": 7,
+          "event_count": 1,
+          "false_positive_alert_episodes": 7,
+          "false_positive_windows": 7,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00003"
+        },
+        {
+          "alert_episodes": 32,
+          "event_count": 1,
+          "false_positive_alert_episodes": 32,
+          "false_positive_windows": 36,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00004"
+        },
+        {
+          "alert_episodes": 14,
+          "event_count": 1,
+          "false_positive_alert_episodes": 14,
+          "false_positive_windows": 17,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00005"
+        },
+        {
+          "alert_episodes": 3,
+          "event_count": 2,
+          "false_positive_alert_episodes": 3,
+          "false_positive_windows": 6,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00006"
+        },
+        {
+          "alert_episodes": 2,
+          "event_count": 0,
+          "false_positive_alert_episodes": 2,
+          "false_positive_windows": 3,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00007"
+        },
+        {
+          "alert_episodes": 1,
+          "event_count": 1,
+          "false_positive_alert_episodes": 1,
+          "false_positive_windows": 1,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00008"
+        },
+        {
+          "alert_episodes": 7,
+          "event_count": 0,
+          "false_positive_alert_episodes": 7,
+          "false_positive_windows": 8,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00009"
+        },
+        {
+          "alert_episodes": 13,
+          "event_count": 1,
+          "false_positive_alert_episodes": 13,
+          "false_positive_windows": 10,
+          "matched_events": 0,
+          "mean_event_coverage": 0.06666476560976736,
+          "run_id": "test-00010"
+        },
+        {
+          "alert_episodes": 0,
+          "event_count": 1,
+          "false_positive_alert_episodes": 0,
+          "false_positive_windows": 0,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00011"
+        },
+        {
+          "alert_episodes": 4,
+          "event_count": 2,
+          "false_positive_alert_episodes": 4,
+          "false_positive_windows": 2,
+          "matched_events": 0,
+          "mean_event_coverage": 0.017229575268915765,
+          "run_id": "test-00012"
+        },
+        {
+          "alert_episodes": 17,
+          "event_count": 2,
+          "false_positive_alert_episodes": 17,
+          "false_positive_windows": 19,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00013"
+        },
+        {
+          "alert_episodes": 23,
+          "event_count": 0,
+          "false_positive_alert_episodes": 23,
+          "false_positive_windows": 24,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00014"
+        },
+        {
+          "alert_episodes": 12,
+          "event_count": 0,
+          "false_positive_alert_episodes": 12,
+          "false_positive_windows": 13,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00015"
+        },
+        {
+          "alert_episodes": 29,
+          "event_count": 2,
+          "false_positive_alert_episodes": 29,
+          "false_positive_windows": 31,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00016"
+        },
+        {
+          "alert_episodes": 7,
+          "event_count": 1,
+          "false_positive_alert_episodes": 7,
+          "false_positive_windows": 8,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00017"
+        },
+        {
+          "alert_episodes": 9,
+          "event_count": 0,
+          "false_positive_alert_episodes": 9,
+          "false_positive_windows": 9,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00018"
+        },
+        {
+          "alert_episodes": 3,
+          "event_count": 0,
+          "false_positive_alert_episodes": 3,
+          "false_positive_windows": 4,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00019"
+        },
+        {
+          "alert_episodes": 32,
+          "event_count": 2,
+          "false_positive_alert_episodes": 32,
+          "false_positive_windows": 35,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00020"
+        },
+        {
+          "alert_episodes": 3,
+          "event_count": 1,
+          "false_positive_alert_episodes": 3,
+          "false_positive_windows": 3,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00021"
+        },
+        {
+          "alert_episodes": 3,
+          "event_count": 1,
+          "false_positive_alert_episodes": 3,
+          "false_positive_windows": 2,
+          "matched_events": 0,
+          "mean_event_coverage": 0.01240863205308773,
+          "run_id": "test-00022"
+        },
+        {
+          "alert_episodes": 21,
+          "event_count": 2,
+          "false_positive_alert_episodes": 21,
+          "false_positive_windows": 28,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00023"
+        },
+        {
+          "alert_episodes": 4,
+          "event_count": 2,
+          "false_positive_alert_episodes": 4,
+          "false_positive_windows": 4,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00024"
+        },
+        {
+          "alert_episodes": 6,
+          "event_count": 0,
+          "false_positive_alert_episodes": 6,
+          "false_positive_windows": 6,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00025"
+        },
+        {
+          "alert_episodes": 0,
+          "event_count": 0,
+          "false_positive_alert_episodes": 0,
+          "false_positive_windows": 0,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00026"
+        },
+        {
+          "alert_episodes": 17,
+          "event_count": 1,
+          "false_positive_alert_episodes": 17,
+          "false_positive_windows": 14,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0652006935484707,
+          "run_id": "test-00027"
+        },
+        {
+          "alert_episodes": 27,
+          "event_count": 2,
+          "false_positive_alert_episodes": 27,
+          "false_positive_windows": 31,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00028"
+        },
+        {
+          "alert_episodes": 1,
+          "event_count": 2,
+          "false_positive_alert_episodes": 1,
+          "false_positive_windows": 1,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00029"
+        },
+        {
+          "alert_episodes": 1,
+          "event_count": 2,
+          "false_positive_alert_episodes": 1,
+          "false_positive_windows": 0,
+          "matched_events": 0,
+          "mean_event_coverage": 0.009793196894527269,
+          "run_id": "test-00030"
+        },
+        {
+          "alert_episodes": 5,
+          "event_count": 1,
+          "false_positive_alert_episodes": 5,
+          "false_positive_windows": 5,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00031"
+        },
+        {
+          "alert_episodes": 16,
+          "event_count": 1,
+          "false_positive_alert_episodes": 16,
+          "false_positive_windows": 27,
+          "matched_events": 0,
+          "mean_event_coverage": 0.1077040914888462,
+          "run_id": "test-00032"
+        },
+        {
+          "alert_episodes": 7,
+          "event_count": 0,
+          "false_positive_alert_episodes": 7,
+          "false_positive_windows": 7,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00033"
+        },
+        {
+          "alert_episodes": 9,
+          "event_count": 2,
+          "false_positive_alert_episodes": 9,
+          "false_positive_windows": 9,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00034"
+        },
+        {
+          "alert_episodes": 24,
+          "event_count": 1,
+          "false_positive_alert_episodes": 24,
+          "false_positive_windows": 28,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00035"
+        },
+        {
+          "alert_episodes": 3,
+          "event_count": 2,
+          "false_positive_alert_episodes": 3,
+          "false_positive_windows": 5,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00036"
+        },
+        {
+          "alert_episodes": 9,
+          "event_count": 1,
+          "false_positive_alert_episodes": 9,
+          "false_positive_windows": 8,
+          "matched_events": 0,
+          "mean_event_coverage": 0.009076162554543311,
+          "run_id": "test-00037"
+        },
+        {
+          "alert_episodes": 25,
+          "event_count": 0,
+          "false_positive_alert_episodes": 25,
+          "false_positive_windows": 27,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00038"
+        },
+        {
+          "alert_episodes": 18,
+          "event_count": 1,
+          "false_positive_alert_episodes": 18,
+          "false_positive_windows": 40,
+          "matched_events": 0,
+          "mean_event_coverage": 0.010387985432820924,
+          "run_id": "test-00039"
+        },
+        {
+          "alert_episodes": 27,
+          "event_count": 2,
+          "false_positive_alert_episodes": 27,
+          "false_positive_windows": 30,
+          "matched_events": 0,
+          "mean_event_coverage": 0.00750570609296588,
+          "run_id": "test-00040"
+        }
+      ],
+      "prediction_files": 40,
+      "prediction_manifest_sha256": "8a8ba7f3e78cb806e5173d2d8aba5f59076a6796d8eb6c26914c4021820d3867",
+      "successful_runs": 40
+    },
+    "iforest": {
+      "alert_episodes": 399,
+      "configuration": "IsolationForest: 150 trees, max_samples=256, random_state=42",
+      "event_f1_micro_v2": 0.009029345372460496,
+      "event_precision_micro_v2": 0.005012531328320802,
+      "event_recall_micro_v2": 0.045454545454545456,
+      "event_runs": 30,
+      "events": 44,
+      "events_detected": 2,
+      "false_positive_alert_episodes": 397,
+      "false_positive_alert_episodes_per_asset_hour": 35.986403122246,
+      "false_positive_windows": 712,
+      "false_positives_per_asset_hour": 64.53984640564018,
+      "library": "scikit-learn 1.9.1",
+      "mean_event_coverage_by_event": 0.030066102748948883,
+      "mean_window_pr_auc_unchanged": 0.23321763439659196,
+      "normal_false_positive_alert_episodes": 82,
+      "normal_false_positive_alert_episodes_per_asset_hour": 37.094747423975875,
+      "normal_false_positive_windows": 134,
+      "normal_false_positives_per_asset_hour": 60.6182457903996,
+      "normal_runs": 10,
+      "per_run": [
+        {
+          "alert_episodes": 4,
+          "event_count": 1,
+          "false_positive_alert_episodes": 4,
+          "false_positive_windows": 11,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00001"
+        },
+        {
+          "alert_episodes": 7,
+          "event_count": 2,
+          "false_positive_alert_episodes": 7,
+          "false_positive_windows": 12,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00002"
+        },
+        {
+          "alert_episodes": 2,
+          "event_count": 1,
+          "false_positive_alert_episodes": 2,
+          "false_positive_windows": 3,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00003"
+        },
+        {
+          "alert_episodes": 16,
+          "event_count": 1,
+          "false_positive_alert_episodes": 16,
+          "false_positive_windows": 45,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00004"
+        },
+        {
+          "alert_episodes": 12,
+          "event_count": 1,
+          "false_positive_alert_episodes": 12,
+          "false_positive_windows": 29,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00005"
+        },
+        {
+          "alert_episodes": 3,
+          "event_count": 2,
+          "false_positive_alert_episodes": 3,
+          "false_positive_windows": 18,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00006"
+        },
+        {
+          "alert_episodes": 1,
+          "event_count": 0,
+          "false_positive_alert_episodes": 1,
+          "false_positive_windows": 2,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00007"
+        },
+        {
+          "alert_episodes": 2,
+          "event_count": 1,
+          "false_positive_alert_episodes": 2,
+          "false_positive_windows": 7,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00008"
+        },
+        {
+          "alert_episodes": 4,
+          "event_count": 0,
+          "false_positive_alert_episodes": 4,
+          "false_positive_windows": 12,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00009"
+        },
+        {
+          "alert_episodes": 8,
+          "event_count": 1,
+          "false_positive_alert_episodes": 8,
+          "false_positive_windows": 13,
+          "matched_events": 0,
+          "mean_event_coverage": 0.01666619140244184,
+          "run_id": "test-00010"
+        },
+        {
+          "alert_episodes": 2,
+          "event_count": 1,
+          "false_positive_alert_episodes": 2,
+          "false_positive_windows": 2,
+          "matched_events": 0,
+          "mean_event_coverage": 0.017250631597374676,
+          "run_id": "test-00011"
+        },
+        {
+          "alert_episodes": 3,
+          "event_count": 2,
+          "false_positive_alert_episodes": 3,
+          "false_positive_windows": 5,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00012"
+        },
+        {
+          "alert_episodes": 39,
+          "event_count": 2,
+          "false_positive_alert_episodes": 39,
+          "false_positive_windows": 84,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00013"
+        },
+        {
+          "alert_episodes": 11,
+          "event_count": 0,
+          "false_positive_alert_episodes": 11,
+          "false_positive_windows": 29,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00014"
+        },
+        {
+          "alert_episodes": 5,
+          "event_count": 0,
+          "false_positive_alert_episodes": 5,
+          "false_positive_windows": 9,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00015"
+        },
+        {
+          "alert_episodes": 10,
+          "event_count": 2,
+          "false_positive_alert_episodes": 10,
+          "false_positive_windows": 23,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00016"
+        },
+        {
+          "alert_episodes": 1,
+          "event_count": 1,
+          "false_positive_alert_episodes": 1,
+          "false_positive_windows": 3,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00017"
+        },
+        {
+          "alert_episodes": 4,
+          "event_count": 0,
+          "false_positive_alert_episodes": 4,
+          "false_positive_windows": 6,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00018"
+        },
+        {
+          "alert_episodes": 2,
+          "event_count": 0,
+          "false_positive_alert_episodes": 2,
+          "false_positive_windows": 3,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00019"
+        },
+        {
+          "alert_episodes": 10,
+          "event_count": 2,
+          "false_positive_alert_episodes": 10,
+          "false_positive_windows": 32,
+          "matched_events": 0,
+          "mean_event_coverage": 0.003933202993358653,
+          "run_id": "test-00020"
+        },
+        {
+          "alert_episodes": 5,
+          "event_count": 1,
+          "false_positive_alert_episodes": 5,
+          "false_positive_windows": 9,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00021"
+        },
+        {
+          "alert_episodes": 5,
+          "event_count": 1,
+          "false_positive_alert_episodes": 5,
+          "false_positive_windows": 8,
+          "matched_events": 0,
+          "mean_event_coverage": 0.006204316026543865,
+          "run_id": "test-00022"
+        },
+        {
+          "alert_episodes": 29,
+          "event_count": 2,
+          "false_positive_alert_episodes": 29,
+          "false_positive_windows": 40,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00023"
+        },
+        {
+          "alert_episodes": 2,
+          "event_count": 2,
+          "false_positive_alert_episodes": 2,
+          "false_positive_windows": 2,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00024"
+        },
+        {
+          "alert_episodes": 1,
+          "event_count": 0,
+          "false_positive_alert_episodes": 1,
+          "false_positive_windows": 2,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00025"
+        },
+        {
+          "alert_episodes": 2,
+          "event_count": 0,
+          "false_positive_alert_episodes": 2,
+          "false_positive_windows": 3,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00026"
+        },
+        {
+          "alert_episodes": 9,
+          "event_count": 1,
+          "false_positive_alert_episodes": 9,
+          "false_positive_windows": 14,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00027"
+        },
+        {
+          "alert_episodes": 11,
+          "event_count": 2,
+          "false_positive_alert_episodes": 11,
+          "false_positive_windows": 17,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00028"
+        },
+        {
+          "alert_episodes": 2,
+          "event_count": 2,
+          "false_positive_alert_episodes": 2,
+          "false_positive_windows": 3,
+          "matched_events": 0,
+          "mean_event_coverage": 0.01388920602575981,
+          "run_id": "test-00029"
+        },
+        {
+          "alert_episodes": 7,
+          "event_count": 2,
+          "false_positive_alert_episodes": 6,
+          "false_positive_windows": 0,
+          "matched_events": 1,
+          "mean_event_coverage": 0.1683047642873577,
+          "run_id": "test-00030"
+        },
+        {
+          "alert_episodes": 3,
+          "event_count": 1,
+          "false_positive_alert_episodes": 3,
+          "false_positive_windows": 2,
+          "matched_events": 0,
+          "mean_event_coverage": 0.019230779596169797,
+          "run_id": "test-00031"
+        },
+        {
+          "alert_episodes": 25,
+          "event_count": 1,
+          "false_positive_alert_episodes": 24,
+          "false_positive_windows": 34,
+          "matched_events": 1,
+          "mean_event_coverage": 0.6731505718052888,
+          "run_id": "test-00032"
+        },
+        {
+          "alert_episodes": 9,
+          "event_count": 0,
+          "false_positive_alert_episodes": 9,
+          "false_positive_windows": 10,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00033"
+        },
+        {
+          "alert_episodes": 5,
+          "event_count": 2,
+          "false_positive_alert_episodes": 5,
+          "false_positive_windows": 5,
+          "matched_events": 0,
+          "mean_event_coverage": 0.006630111942279625,
+          "run_id": "test-00034"
+        },
+        {
+          "alert_episodes": 20,
+          "event_count": 1,
+          "false_positive_alert_episodes": 20,
+          "false_positive_windows": 26,
+          "matched_events": 0,
+          "mean_event_coverage": 0.18680845016231792,
+          "run_id": "test-00035"
+        },
+        {
+          "alert_episodes": 3,
+          "event_count": 2,
+          "false_positive_alert_episodes": 3,
+          "false_positive_windows": 6,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00036"
+        },
+        {
+          "alert_episodes": 5,
+          "event_count": 1,
+          "false_positive_alert_episodes": 5,
+          "false_positive_windows": 8,
+          "matched_events": 0,
+          "mean_event_coverage": 0.009076162554543311,
+          "run_id": "test-00037"
+        },
+        {
+          "alert_episodes": 43,
+          "event_count": 0,
+          "false_positive_alert_episodes": 43,
+          "false_positive_windows": 58,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00038"
+        },
+        {
+          "alert_episodes": 14,
+          "event_count": 1,
+          "false_positive_alert_episodes": 14,
+          "false_positive_windows": 22,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00039"
+        },
+        {
+          "alert_episodes": 53,
+          "event_count": 2,
+          "false_positive_alert_episodes": 53,
+          "false_positive_windows": 95,
+          "matched_events": 0,
+          "mean_event_coverage": 0.004503423655779527,
+          "run_id": "test-00040"
+        }
+      ],
+      "prediction_files": 40,
+      "prediction_manifest_sha256": "30f398cedd06da3b40b896230d74b37f98a12615824beb18069cdc492cb44c16",
+      "successful_runs": 40
+    },
+    "lof": {
+      "alert_episodes": 278,
+      "configuration": "LocalOutlierFactor novelty mode, 20 neighbors",
+      "event_f1_micro_v2": 0.06832298136645963,
+      "event_precision_micro_v2": 0.039568345323741004,
+      "event_recall_micro_v2": 0.25,
+      "event_runs": 30,
+      "events": 44,
+      "events_detected": 11,
+      "false_positive_alert_episodes": 267,
+      "false_positive_alert_episodes_per_asset_hour": 24.202442402115068,
+      "false_positive_windows": 452,
+      "false_positives_per_asset_hour": 40.97192496537832,
+      "library": "scikit-learn 1.9.1",
+      "mean_event_coverage_by_event": 0.23383765240669863,
+      "mean_window_pr_auc_unchanged": 0.3672107836887909,
+      "normal_false_positive_alert_episodes": 26,
+      "normal_false_positive_alert_episodes_per_asset_hour": 11.761749183211862,
+      "normal_false_positive_windows": 176,
+      "normal_false_positives_per_asset_hour": 79.6179944709726,
+      "normal_runs": 10,
+      "per_run": [
+        {
+          "alert_episodes": 23,
+          "event_count": 1,
+          "false_positive_alert_episodes": 23,
+          "false_positive_windows": 7,
+          "matched_events": 0,
+          "mean_event_coverage": 0.29174584274026266,
+          "run_id": "test-00001"
+        },
+        {
+          "alert_episodes": 5,
+          "event_count": 2,
+          "false_positive_alert_episodes": 5,
+          "false_positive_windows": 6,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00002"
+        },
+        {
+          "alert_episodes": 1,
+          "event_count": 1,
+          "false_positive_alert_episodes": 1,
+          "false_positive_windows": 2,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00003"
+        },
+        {
+          "alert_episodes": 6,
+          "event_count": 1,
+          "false_positive_alert_episodes": 6,
+          "false_positive_windows": 10,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00004"
+        },
+        {
+          "alert_episodes": 42,
+          "event_count": 1,
+          "false_positive_alert_episodes": 41,
+          "false_positive_windows": 157,
+          "matched_events": 1,
+          "mean_event_coverage": 0.6042387385886803,
+          "run_id": "test-00005"
+        },
+        {
+          "alert_episodes": 5,
+          "event_count": 2,
+          "false_positive_alert_episodes": 4,
+          "false_positive_windows": 22,
+          "matched_events": 1,
+          "mean_event_coverage": 0.5,
+          "run_id": "test-00006"
+        },
+        {
+          "alert_episodes": 0,
+          "event_count": 0,
+          "false_positive_alert_episodes": 0,
+          "false_positive_windows": 0,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00007"
+        },
+        {
+          "alert_episodes": 12,
+          "event_count": 1,
+          "false_positive_alert_episodes": 12,
+          "false_positive_windows": 4,
+          "matched_events": 0,
+          "mean_event_coverage": 0.16422023689958415,
+          "run_id": "test-00008"
+        },
+        {
+          "alert_episodes": 2,
+          "event_count": 0,
+          "false_positive_alert_episodes": 2,
+          "false_positive_windows": 130,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00009"
+        },
+        {
+          "alert_episodes": 3,
+          "event_count": 1,
+          "false_positive_alert_episodes": 3,
+          "false_positive_windows": 3,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00010"
+        },
+        {
+          "alert_episodes": 3,
+          "event_count": 1,
+          "false_positive_alert_episodes": 2,
+          "false_positive_windows": 2,
+          "matched_events": 1,
+          "mean_event_coverage": 1.0,
+          "run_id": "test-00011"
+        },
+        {
+          "alert_episodes": 2,
+          "event_count": 2,
+          "false_positive_alert_episodes": 1,
+          "false_positive_windows": 1,
+          "matched_events": 1,
+          "mean_event_coverage": 0.5,
+          "run_id": "test-00012"
+        },
+        {
+          "alert_episodes": 8,
+          "event_count": 2,
+          "false_positive_alert_episodes": 7,
+          "false_positive_windows": 2,
+          "matched_events": 1,
+          "mean_event_coverage": 0.31024059032567947,
+          "run_id": "test-00013"
+        },
+        {
+          "alert_episodes": 6,
+          "event_count": 0,
+          "false_positive_alert_episodes": 6,
+          "false_positive_windows": 7,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00014"
+        },
+        {
+          "alert_episodes": 1,
+          "event_count": 0,
+          "false_positive_alert_episodes": 1,
+          "false_positive_windows": 2,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00015"
+        },
+        {
+          "alert_episodes": 22,
+          "event_count": 2,
+          "false_positive_alert_episodes": 21,
+          "false_positive_windows": 10,
+          "matched_events": 1,
+          "mean_event_coverage": 0.3632021577715987,
+          "run_id": "test-00016"
+        },
+        {
+          "alert_episodes": 2,
+          "event_count": 1,
+          "false_positive_alert_episodes": 2,
+          "false_positive_windows": 3,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00017"
+        },
+        {
+          "alert_episodes": 1,
+          "event_count": 0,
+          "false_positive_alert_episodes": 1,
+          "false_positive_windows": 1,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00018"
+        },
+        {
+          "alert_episodes": 1,
+          "event_count": 0,
+          "false_positive_alert_episodes": 1,
+          "false_positive_windows": 1,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00019"
+        },
+        {
+          "alert_episodes": 46,
+          "event_count": 2,
+          "false_positive_alert_episodes": 46,
+          "false_positive_windows": 9,
+          "matched_events": 0,
+          "mean_event_coverage": 0.10816308231736296,
+          "run_id": "test-00020"
+        },
+        {
+          "alert_episodes": 1,
+          "event_count": 1,
+          "false_positive_alert_episodes": 1,
+          "false_positive_windows": 1,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00021"
+        },
+        {
+          "alert_episodes": 0,
+          "event_count": 1,
+          "false_positive_alert_episodes": 0,
+          "false_positive_windows": 0,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00022"
+        },
+        {
+          "alert_episodes": 9,
+          "event_count": 2,
+          "false_positive_alert_episodes": 9,
+          "false_positive_windows": 4,
+          "matched_events": 0,
+          "mean_event_coverage": 0.022558476898983222,
+          "run_id": "test-00023"
+        },
+        {
+          "alert_episodes": 0,
+          "event_count": 2,
+          "false_positive_alert_episodes": 0,
+          "false_positive_windows": 0,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00024"
+        },
+        {
+          "alert_episodes": 11,
+          "event_count": 0,
+          "false_positive_alert_episodes": 11,
+          "false_positive_windows": 31,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00025"
+        },
+        {
+          "alert_episodes": 1,
+          "event_count": 0,
+          "false_positive_alert_episodes": 1,
+          "false_positive_windows": 1,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00026"
+        },
+        {
+          "alert_episodes": 5,
+          "event_count": 1,
+          "false_positive_alert_episodes": 5,
+          "false_positive_windows": 4,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0217335645161569,
+          "run_id": "test-00027"
+        },
+        {
+          "alert_episodes": 4,
+          "event_count": 2,
+          "false_positive_alert_episodes": 4,
+          "false_positive_windows": 4,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00028"
+        },
+        {
+          "alert_episodes": 11,
+          "event_count": 2,
+          "false_positive_alert_episodes": 10,
+          "false_positive_windows": 2,
+          "matched_events": 1,
+          "mean_event_coverage": 0.31938347314485904,
+          "run_id": "test-00029"
+        },
+        {
+          "alert_episodes": 1,
+          "event_count": 2,
+          "false_positive_alert_episodes": 0,
+          "false_positive_windows": 0,
+          "matched_events": 1,
+          "mean_event_coverage": 0.5,
+          "run_id": "test-00030"
+        },
+        {
+          "alert_episodes": 1,
+          "event_count": 1,
+          "false_positive_alert_episodes": 1,
+          "false_positive_windows": 1,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00031"
+        },
+        {
+          "alert_episodes": 7,
+          "event_count": 1,
+          "false_positive_alert_episodes": 6,
+          "false_positive_windows": 1,
+          "matched_events": 1,
+          "mean_event_coverage": 0.7611310949733221,
+          "run_id": "test-00032"
+        },
+        {
+          "alert_episodes": 0,
+          "event_count": 0,
+          "false_positive_alert_episodes": 0,
+          "false_positive_windows": 0,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00033"
+        },
+        {
+          "alert_episodes": 15,
+          "event_count": 2,
+          "false_positive_alert_episodes": 15,
+          "false_positive_windows": 2,
+          "matched_events": 0,
+          "mean_event_coverage": 0.07293123136507587,
+          "run_id": "test-00034"
+        },
+        {
+          "alert_episodes": 6,
+          "event_count": 1,
+          "false_positive_alert_episodes": 5,
+          "false_positive_windows": 8,
+          "matched_events": 1,
+          "mean_event_coverage": 0.9990408752518721,
+          "run_id": "test-00035"
+        },
+        {
+          "alert_episodes": 3,
+          "event_count": 2,
+          "false_positive_alert_episodes": 3,
+          "false_positive_windows": 0,
+          "matched_events": 0,
+          "mean_event_coverage": 0.027272710413233564,
+          "run_id": "test-00036"
+        },
+        {
+          "alert_episodes": 1,
+          "event_count": 1,
+          "false_positive_alert_episodes": 1,
+          "false_positive_windows": 1,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00037"
+        },
+        {
+          "alert_episodes": 3,
+          "event_count": 0,
+          "false_positive_alert_episodes": 3,
+          "false_positive_windows": 3,
+          "matched_events": 0,
+          "mean_event_coverage": null,
+          "run_id": "test-00038"
+        },
+        {
+          "alert_episodes": 1,
+          "event_count": 1,
+          "false_positive_alert_episodes": 1,
+          "false_positive_windows": 1,
+          "matched_events": 0,
+          "mean_event_coverage": 0.0,
+          "run_id": "test-00039"
+        },
+        {
+          "alert_episodes": 7,
+          "event_count": 2,
+          "false_positive_alert_episodes": 6,
+          "false_positive_windows": 9,
+          "matched_events": 1,
+          "mean_event_coverage": 0.49962145422563725,
+          "run_id": "test-00040"
+        }
+      ],
+      "prediction_files": 40,
+      "prediction_manifest_sha256": "5c1f3dbe41c07d67794e03e8f3c96949d0e8bc23887b023fde86885fb2fc384a",
+      "successful_runs": 40
+    }
+  },
+  "score_threshold": 0.995,
+  "selected_run_count": 40,
+  "source_artifacts": {
+    "test-labels.zip": {
+      "bytes": 156991,
+      "sha256": "d07b6456e892388f12b3a753d96f27653b9b63dd6e173181f4f94d1d8ca23691"
+    },
+    "test.zip": {
+      "bytes": 10323891,
+      "sha256": "21525ef7c9c70eb47c3d4cf55003ef74ef22f6dfa4c8db461d5d3dc7dd791ab2"
+    }
+  }
+}
