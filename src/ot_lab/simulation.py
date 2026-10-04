@@ -127,6 +127,7 @@ def _generate_suite_scenario(base: dict[str, Any], generation: dict[str, Any], r
             selected.append(item)
             remaining.remove(item)
         duration = int(data["duration_s"])
+        requests: list[dict[str, Any]] = []
         for item in selected:
             candidates = [asset for asset in data["assets"] if asset["asset_class"] in item.get("asset_classes", [asset["asset_class"] for asset in data["assets"]])]
             if not candidates:
@@ -135,29 +136,69 @@ def _generate_suite_scenario(base: dict[str, Any], generation: dict[str, Any], r
             if not 0 < fraction <= 1:
                 raise ValueError("duration_fraction must be within (0, 1]")
             event_duration = max(1, min(duration, round(duration * fraction)))
-            event_start = None
-            asset = None
-            for _ in range(256):
-                candidate_asset = candidates[int(rng.integers(0, len(candidates)))]
-                start_fraction = float(_draw(item.get("start_fraction", {"min": 0.1, "max": 0.7}), rng))
-                if not 0 <= start_fraction <= 1:
-                    raise ValueError("start_fraction must be within 0..1")
-                candidate_start = max(0, min(duration - event_duration, round(duration * start_fraction)))
-                candidate_end = candidate_start + event_duration
-                occupied = [event for event in data["anomalies"] if event["asset"] == candidate_asset["asset_id"]]
-                if all(candidate_end <= event["start"] or candidate_start >= event["start"] + event["duration"] for event in occupied):
-                    asset, event_start = candidate_asset, candidate_start
-                    break
-            if asset is None or event_start is None:
-                raise ValueError("could not place non-overlapping sampled events within the run")
-            parameters = {key: _draw_parameter(value, rng, asset["asset_class"]) for key, value in item.get("parameters", {}).items()}
-            if any(isinstance(value, dict) for value in parameters.values()):
-                raise ValueError(f"unresolved parameter specification in template {item['type']}")
-            data["anomalies"].append({
-                "type": item["type"], "asset": asset["asset_id"], "start": event_start,
-                "duration": event_duration, "severity": float(_draw(item.get("severity", {"min": 0.2, "max": 0.8}), rng)),
-                "parameters": parameters,
+            start_fraction = float(_draw(item.get("start_fraction", {"min": 0.1, "max": 0.7}), rng))
+            if not 0 <= start_fraction <= 1:
+                raise ValueError("start_fraction must be within 0..1")
+            requests.append({
+                "type": item["type"], "template": item, "candidates": candidates, "duration": event_duration,
+                "desired_start": max(0, min(duration - event_duration, round(duration * start_fraction))),
+                "severity": float(_draw(item.get("severity", {"min": 0.2, "max": 0.8}), rng)),
             })
+        # Place the most constrained and longest events first, then backtrack over
+        # feasible gaps. Retain seeded randomized choices among feasible placements.
+        rng.shuffle(requests)
+        requests.sort(key=lambda request: (len(request["candidates"]), -request["duration"]))
+        placed: list[dict[str, Any]] = []
+
+        def place(index: int) -> bool:
+            if index == len(requests):
+                return True
+            request = requests[index]
+            for candidate_index in rng.permutation(len(request["candidates"])):
+                asset = request["candidates"][int(candidate_index)]
+                occupied = sorted(
+                    (event["start"], event["start"] + event["duration"])
+                    for event in placed if event["asset"] == asset["asset_id"]
+                )
+                gaps: list[tuple[int, int]] = []
+                cursor = 0
+                for occupied_start, occupied_end in occupied:
+                    gaps.append((cursor, occupied_start))
+                    cursor = max(cursor, occupied_end)
+                gaps.append((cursor, duration))
+                start_options: set[int] = set()
+                feasible = False
+                for gap_start, gap_end in gaps:
+                    latest_start = gap_end - request["duration"]
+                    if latest_start < gap_start:
+                        continue
+                    feasible = True
+                    preferred = min(max(request["desired_start"], gap_start), latest_start)
+                    start_options.update((gap_start, preferred, latest_start))
+                if not feasible:
+                    continue
+                parameters = {
+                    key: _draw_parameter(value, rng, asset["asset_class"])
+                    for key, value in request["template"].get("parameters", {}).items()
+                }
+                if any(isinstance(value, dict) for value in parameters.values()):
+                    raise ValueError(f"unresolved parameter specification in template {request['type']}")
+                ordered_starts = sorted(start_options)
+                rng.shuffle(ordered_starts)
+                for event_start in ordered_starts:
+                    placed.append({
+                        "type": request["type"], "asset": asset["asset_id"], "start": event_start,
+                        "duration": request["duration"], "severity": request["severity"],
+                        "parameters": parameters,
+                    })
+                    if place(index + 1):
+                        return True
+                    placed.pop()
+            return False
+
+        if not place(0):
+            raise ValueError("selected anomaly durations cannot be placed on the available assets within the run")
+        data["anomalies"] = sorted(placed, key=lambda event: (event["asset"], event["start"], event["type"]))
     return data
 
 def read_scenario(path: Path) -> Scenario:
@@ -179,7 +220,7 @@ def resolve_profiles(data: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"unknown difficulty profile {profile_name!r}")
         gain_scale = profiles[profile_name]
         params = anomaly.setdefault("parameters", {})
-        explicit_keys = ("vibration_gain", "temperature_gain", "current_gain", "flow_loss", "pressure_loss", "bias", "magnitude", "rate_per_minute")
+        explicit_keys = ("vibration_gain", "temperature_gain", "current_gain", "flow_loss", "pressure_loss", "pressure_loss_fraction", "bias", "magnitude", "rate_per_minute")
         for key in explicit_keys:
             if key in params and isinstance(params[key], (int, float)):
                 params[key] = float(params[key]) * gain_scale
@@ -238,6 +279,25 @@ def _affect(
             affected.add(name)
         for name in pick("motor_current_a"):
             signals[name] *= 1 + float(p.get("current_gain", 0.05)) * fraction * severity_scale
+            affected.add(name)
+    elif kind == "air_leak":
+        pressure_signals = pick("pressure_bar")
+        current_signals = pick("motor_current_a")
+        if asset_class != "compressor" or not pressure_signals or not current_signals:
+            raise ValueError("air_leak requires a compressor asset with pressure and motor-current signals")
+        progression = str(p.get("progression", "linear"))
+        progress = fraction if progression == "linear" else min(1.0, fraction**2) if progression == "slow_start" else fraction**0.5 if progression == "fast_start" else None
+        if progress is None:
+            raise ValueError(f"unsupported air_leak progression {progression!r}")
+        pressure_loss = float(p.get("pressure_loss_fraction", 0.15))
+        current_gain = float(p.get("current_gain", 0.20))
+        if not 0 <= pressure_loss <= 1 or not 0 <= current_gain <= 1:
+            raise ValueError("air_leak pressure_loss_fraction and current_gain must be within 0..1")
+        for name in pressure_signals:
+            signals[name] *= 1 - pressure_loss * progress * severity_scale
+            affected.add(name)
+        for name in current_signals:
+            signals[name] *= 1 + current_gain * progress * severity_scale
             affected.add(name)
     elif kind == "cooling_degradation":
         for name in pick("temperature_c", "oil_temperature_c", "discharge_temperature_c", "spindle_temperature_c"):

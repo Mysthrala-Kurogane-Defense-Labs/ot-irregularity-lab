@@ -7,6 +7,8 @@ These are low-cost engineering relationships for reproducible dataset generation
 - Compressor: load drives current, pressure, discharge/oil temperatures, and vibration.
 - Conveyor: load drives current, speed, temperature, vibration, and photoeye rate.
 
+The compressor-only `air_leak` anomaly represents a pressure loss with a compensating increase in motor current. This is a deliberately reduced-order effect inspired by maintenance-reported MetroPT-3 air leaks; it does not simulate pneumatic demand, reservoir dynamics or the original controller. Its loss/gain fractions and progression are sampled from the versioned training or challenge suite, not fitted failure magnitudes. Source and licensing analysis is recorded in [DATASET_PATTERN_REVIEW.md](DATASET_PATTERN_REVIEW.md).
+
 ## Versioned compressor profiles
 
 `AssetSpec.process_profile` selects a model independently of the anomaly or evaluator. `generic` is the default and uses the illustrative generic compressor equations. `metropt3_rail_apu` opts into a profile informed by the aggregate MetroPT-3 report in `calibration/metropt-3-summary.json`; it is valid only for compressor assets. Each asset records `process_profile_version` (`1.0.0`) and may override explicit `process_parameters` in scenario YAML. Supported overrides include loaded/off current and pressure anchors, load and thermal time constants, and sensor-noise scales. Unknown parameters, non-finite values and non-positive time constants are rejected. A resolved scenario preserves overrides for replay and dataset provenance.

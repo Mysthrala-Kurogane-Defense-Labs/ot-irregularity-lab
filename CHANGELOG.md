@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added a MetroPT-3-informed compressor `air_leak` event that couples configurable pressure loss and compensating motor-current increase; added versioned training v0.3 and challenge v0.2 distributions without changing older suites.
+- Added compressor-containing randomized asset profiles and bounded seeded backtracking for multi-event placement; a 300-run validation dataset records 12 air leaks, with no air-leak cases realized in validation/test in that finite draw.
+- Compared public industrial datasets and repositories with explicit license and transfer limits; no third-party data or detector implementation was added.
 - Replaced multiplicative per-sample scans in timestamp PR-AUC scoring with ordered active-interval heaps for prediction scores and event labels.
 - Versioned event precision and recall against one-to-one matching of alert episodes to eligible ground-truth events.
 - Added aggregate-only, provenance-hashed analysis for the full public MetroPT-3 compressor dataset and an opt-in rail APU compressor profile bounded to its observed mode-conditioned signal envelopes.

@@ -620,6 +620,86 @@ def test_training_suite_samples_reproducible_mixed_run_definitions():
     assert all(0 <= event["start"] < sampled_a["duration_s"] for event in sampled_a["anomalies"])
 
 
+def test_training_v03_distribution_samples_compressor_air_leaks():
+    import yaml
+
+    suite = yaml.safe_load(Path("suites/training-v0.3.yaml").read_text(encoding="utf-8"))
+    assets_by_id = {}
+    sampled_air_leak = None
+    for seed in range(300):
+        sampled = _generate_suite_scenario(
+            suite["scenario"], suite["generation"], np.random.default_rng(seed), f"air-leak-{seed}"
+        )
+        assets_by_id.update({asset["asset_id"]: asset["asset_class"] for asset in sampled["assets"]})
+        sampled_air_leak = next((event for event in sampled["anomalies"] if event["type"] == "air_leak"), None)
+        if sampled_air_leak:
+            break
+
+    assert sampled_air_leak is not None
+    assert assets_by_id[sampled_air_leak["asset"]] == "compressor"
+    assert 0.04 <= sampled_air_leak["parameters"]["pressure_loss_fraction"] <= 0.35
+    assert 0.05 <= sampled_air_leak["parameters"]["current_gain"] <= 0.40
+    assert Scenario.model_validate({**sampled, "anomalies": [sampled_air_leak]})
+
+    compressor_event_count = 0
+    anomalous_run_count = 0
+    for seed in range(300):
+        sampled = _generate_suite_scenario(
+            suite["scenario"], suite["generation"], np.random.default_rng(seed), f"mix-{seed}"
+        )
+        anomalous_run_count += bool(sampled["anomalies"])
+        compressor_event_count += sum(event["type"] == "air_leak" for event in sampled["anomalies"])
+    assert compressor_event_count >= 15
+    assert anomalous_run_count >= 150
+
+    # Event placement must remain feasible and deterministic over independent seeds.
+    for seed in range(120):
+        first = _generate_suite_scenario(
+            suite["scenario"], suite["generation"], np.random.default_rng(seed), f"stability-{seed}"
+        )
+        second = _generate_suite_scenario(
+            suite["scenario"], suite["generation"], np.random.default_rng(seed), f"stability-{seed}"
+        )
+        assert first == second
+        Scenario.model_validate(first)
+        for asset_id in {event["asset"] for event in first["anomalies"]}:
+            asset_events = sorted(
+                (event for event in first["anomalies"] if event["asset"] == asset_id),
+                key=lambda event: event["start"],
+            )
+            assert all(a["start"] + a["duration"] <= b["start"] for a, b in pairwise(asset_events))
+
+
+def test_challenge_v02_can_generate_ephemeral_compressor_air_leak(tmp_path):
+    import yaml
+
+    from ot_lab.simulation import generate_challenge
+
+    training_path = Path("suites/training-v0.3.yaml")
+    challenge_path = Path("suites/challenge-v0.2.yaml")
+    challenge = yaml.safe_load(challenge_path.read_text(encoding="utf-8"))
+    generation = {**challenge["generation"], "anomaly_probability": 1.0}
+    seed = None
+    for candidate_seed in range(500):
+        sampled = _generate_suite_scenario(
+            challenge["scenario"], generation, np.random.default_rng(candidate_seed), "challenge-hidden"
+        )
+        if any(event["type"] == "air_leak" for event in sampled["anomalies"]):
+            seed = candidate_seed
+            break
+    assert seed is not None
+
+    case_dir, truth_path = generate_challenge(
+        training_path, tmp_path, master_seed=seed, challenge_suite_path=challenge_path
+    )
+    truth = json.loads(truth_path.read_text(encoding="utf-8"))
+    metadata = json.loads((case_dir / "run_metadata.json").read_text(encoding="utf-8"))
+
+    assert any(event["type"] == "air_leak" for event in truth["events"])
+    assert "seed" not in metadata and "scenario_sha256" not in metadata
+    assert not (case_dir / "scenario.yaml").exists()
+
+
 def test_normal_suite_samples_reproducible_process_variation_ranges():
     import yaml
 
@@ -992,6 +1072,45 @@ def test_all_anomaly_types_emit_independent_ground_truth(kind):
     assert truth["events"][0]["type"] == kind
     assert truth["events"][0]["affected_signals"]
     assert telemetry.height > 0
+
+
+def test_air_leak_couples_pressure_loss_and_compensating_current_with_ground_truth():
+    anomaly = {
+        "type": "air_leak", "asset": "ASSET-01", "start": 5, "duration": 10,
+        "severity": 1.0,
+        "parameters": {"pressure_loss_fraction": 0.4, "current_gain": 0.5},
+    }
+    normal = simulate(fixture_scenario("compressor"), 19)[0]
+    affected, truth, _ = simulate(fixture_scenario("compressor", anomaly), 19)
+    event_start = EPOCH + timedelta(seconds=5)
+    event_end = EPOCH + timedelta(seconds=15)
+
+    def values(frame, signal):
+        return frame.filter(
+            (pl.col("tag_id") == signal)
+            & (pl.col("timestamp") >= event_start)
+            & (pl.col("timestamp") < event_end)
+        ).sort("timestamp").get_column("value")
+
+    normal_pressure, affected_pressure = values(normal, "pressure_bar"), values(affected, "pressure_bar")
+    normal_current, affected_current = values(normal, "motor_current_a"), values(affected, "motor_current_a")
+
+    assert affected_pressure.mean() < normal_pressure.mean()
+    assert affected_current.mean() > normal_current.mean()
+    assert set(truth["events"][0]["affected_signals"]) == {"pressure_bar", "motor_current_a"}
+    assert truth["events"][0]["type"] == "air_leak"
+
+
+def test_air_leak_rejects_incompatible_assets_and_unbounded_effects():
+    with pytest.raises(ValueError, match="requires a compressor asset"):
+        simulate(fixture_scenario("pump", {
+            "type": "air_leak", "asset": "ASSET-01", "start": 5, "duration": 10,
+        }), 19)
+    with pytest.raises(ValueError, match="must be within 0..1"):
+        simulate(fixture_scenario("compressor", {
+            "type": "air_leak", "asset": "ASSET-01", "start": 5, "duration": 10,
+            "parameters": {"pressure_loss_fraction": 1.1},
+        }), 19)
 
 
 def test_multivariate_novelty_stays_inside_declared_engineering_bounds():

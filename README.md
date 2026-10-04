@@ -17,12 +17,12 @@ uv sync --extra dev
 uv run ot-lab generate --scenario scenarios/cnc-bearing-medium.yaml --seed 42 --output runs/cnc-0042
 uv run ot-lab replay runs/cnc-0042
 uv run ot-lab batch --suite suites/training.yaml --runs 100 --seed 42 --output datasets/training
-uv run ot-lab dataset create --suite suites/training-v0.2.yaml --runs 3000 --seed 20261003 --output datasets/ot-irregularity-training-v0.2
+uv run ot-lab dataset create --suite suites/training-v0.3.yaml --runs 1000 --seed 20261005 --output datasets/ot-irregularity-training-v0.5
 ```
 
 For long runs, add `--resume` to keep per-run checkpoints after interruption. Re-run with the same suite, run count, seed, and dedicated output directory to continue generation.
 
-The randomized training suite mixes normal process variation with seeded events across all 15 supported event families. Its realized class, event, asset, and regime distributions are recorded in the dataset manifest. See [the synthetic dataset design and source analysis](SYNTHETIC_DATASET_DESIGN.md) for the sampling choices and limits.
+The versioned randomized training suites mix normal process variation with seeded events across 15 event families in v0.2 and 16 in v0.3. Its realized class, event, asset, and regime distributions are recorded in the dataset manifest. See [the synthetic dataset design](SYNTHETIC_DATASET_DESIGN.md) and [public dataset pattern review](DATASET_PATTERN_REVIEW.md) for sampling evidence and limits.
 
 For event-free runs with randomized assets, shifts, startup/shutdown, ambient changes, cadence, and jitter, generate `suites/normal-operation-v0.1.yaml` with `uv run ot-lab dataset create --suite suites/normal-operation-v0.1.yaml --runs 1000 --seed 42 --output datasets/normal-v0.1`. This suite is useful for studying false alarms during ordinary transitions; it does not establish field-normal limits.
 
@@ -30,7 +30,7 @@ The 1,000-run [OT Irregularity Training Dataset v0.3.0](https://github.com/Mysth
 
 The model input is `telemetry.parquet`; never pass `ground_truth.json` or `run_metadata.json` to a model submission. The evaluator reads predictions and ground truth in a separate process. Do not mount ground truth into inference containers.
 
-Run a fresh Docker challenge with a separate hidden-case distribution: `uv run ot-lab challenge --suite suites/training-v0.2.yaml --challenge-suite suites/challenge-v0.1.yaml --image MODEL_IMAGE --output results/model-a`. Each invocation uses an OS-generated seed; suite definitions are public and scenario parameters are sampled afresh.
+Run a fresh Docker challenge with a separate hidden-case distribution: `uv run ot-lab challenge --suite suites/training-v0.3.yaml --challenge-suite suites/challenge-v0.2.yaml --image MODEL_IMAGE --output results/model-a`. Each invocation uses an OS-generated seed; suite definitions are public and scenario parameters are sampled afresh.
 
 Generate large train/validation/test datasets with deterministic process workers: `uv run ot-lab dataset create --suite suites/normal-operation-v0.1.yaml --runs 1000 --seed 424242 --workers 4 --output datasets/normal-v1`. The default worker count is one; see [BENCHMARK.md](BENCHMARK.md) for measured throughput and its limits.
 
@@ -47,6 +47,7 @@ To analyze a locally obtained, CC BY 4.0 MetroPT-3 CSV without adding it to the 
 - [Scenario definitions](SCENARIOS.md)
 - [Process models](PROCESS_MODELS.md)
 - [Datasets and partitions](DATASETS.md)
+- [Dataset patterns and evidence](DATASET_PATTERN_REVIEW.md)
 - [Benchmark protocol](BENCHMARK.md)
 - [Contributing](CONTRIBUTING.md)
 

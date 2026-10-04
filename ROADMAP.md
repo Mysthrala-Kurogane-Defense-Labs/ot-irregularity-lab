@@ -2,6 +2,8 @@
 
 OT Irregularity Lab v0.2.0 delivers a randomized suite and one public 1,000-run training dataset. This roadmap records remaining work from the broader platform vision. Items here are not implemented unless their status is explicitly changed in a later release.
 
+- [x] Add a data-informed compressor air-leak family and versioned randomized training/challenge profiles. A 300-run v0.5 validation sample contains 12 air leaks across 16 families; replay is exact. The finite sample omitted this rare family from validation and test, so partition coverage remains to be addressed before any release. See [the validation record](docs/workflows/synthetic-dataset-generation/runs/2026-10-04-training-v0.5-distribution-validation.md).
+
 ## Dataset and simulator
 
 - [x] Make event severity operational for continuous effects and sampled effects. Severity 0 leaves the process unchanged; severity 1 applies configured magnitudes or loss rates. `sensor_stuck` blends toward the held value, while communication loss, single-signal loss and quality degradation apply seeded per-sample probabilities. Discrete outcomes remain categorical, but their frequency responds to severity. More type-specific calibration remains needed.

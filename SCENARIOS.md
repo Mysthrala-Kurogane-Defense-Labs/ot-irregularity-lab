@@ -2,11 +2,11 @@
 
 Scenario YAML is versioned with `scenario_version`; times are offsets from run start in seconds in v0.1. Assets define class and available regimes. Anomaly blocks define type, asset, start, duration, severity, and explicit numeric/string/bool parameters.
 
-Supported initial scenario names: `sensor_drift`, `sudden_spike`, `bearing_degradation`, `cavitation`, `cooling_degradation`, `mechanical_overload`, `sensor_stuck`, `sensor_bias`, `missing_telemetry`, `single_signal_loss`, `asset_communication_loss`, `quality_degradation`, `regime_mismatch`, `multivariate_novelty`, and `maintenance_activity`.
+Supported scenario names: `sensor_drift`, `sudden_spike`, `bearing_degradation`, `cavitation`, `cooling_degradation`, `mechanical_overload`, `sensor_stuck`, `sensor_bias`, `missing_telemetry`, `single_signal_loss`, `asset_communication_loss`, `quality_degradation`, `regime_mismatch`, `multivariate_novelty`, `maintenance_activity`, and compressor-only `air_leak`.
 
 Difficulty labels resolve to explicit numeric gain scales: easy 0.50, medium 0.25, hard 0.10, very_hard 0.05. The resolved factor is written into the scenario and the numeric parameters are scaled before simulation. This is a starting convention, not a universal perceptual calibration across unrelated anomaly types; benchmark authors should publish type-specific parameter ranges with each suite.
 
-For generated multi-run datasets, `suites/training-v0.2.yaml` adds weighted asset/regime profiles and fault templates with numeric distributions for onset, duration, severity, and affected-signal behavior. The generator samples those settings from each run's independent seed and saves the resolved scenario beside that run. The suite's intended distribution and its evidence basis are described in [SYNTHETIC_DATASET_DESIGN.md](SYNTHETIC_DATASET_DESIGN.md).
+For generated multi-run datasets, `suites/training-v0.2.yaml` preserves the original 15-family distribution. `suites/training-v0.3.yaml` adds seeded `air_leak` scenarios with numeric distributions for onset, duration, severity, progression and signal effects. The generator samples settings from each run's independent seed and saves the resolved scenario beside that run. Research and licensing boundaries are described in [DATASET_PATTERN_REVIEW.md](DATASET_PATTERN_REVIEW.md).
 
 ```yaml
 scenario_id: cnc-bearing-medium

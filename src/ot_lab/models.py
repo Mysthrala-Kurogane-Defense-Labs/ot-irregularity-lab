@@ -16,7 +16,7 @@ AnomalyType = Literal[
     "sensor_drift", "sudden_spike", "bearing_degradation", "cavitation",
     "cooling_degradation", "mechanical_overload", "sensor_stuck", "sensor_bias",
     "missing_telemetry", "single_signal_loss", "asset_communication_loss",
-    "quality_degradation", "regime_mismatch", "multivariate_novelty",
+    "quality_degradation", "regime_mismatch", "multivariate_novelty", "air_leak",
     "maintenance_activity",
 ]
 
