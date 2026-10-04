@@ -4,6 +4,8 @@
 
 Exercise the model-agnostic submission and scoring path with three independently implemented methods. This is an exploratory evaluation of generated data, not evidence of industrial detection quality, simulator fidelity, or operational false-alarm rates. The results did not change the simulator or its fault parameters.
 
+This record preserves the original event/window-mixed precision calculation for historical reproducibility. It predates metric version 2.0.0; use the [v2 rescore](2026-10-04-external-model-evaluation-metrics-v2.md) and its [machine-readable results](2026-10-04-external-model-evaluation-v0.4.0-metrics-v2.json) for coherent event/episode precision and F1.
+
 ## Data and inference boundary
 
 - Dataset: public [OT Irregularity Dataset v0.4.0](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/releases/tag/dataset-v0.4.0), `test` partition, lexical first 40 runs. These contained 10 event-free runs, 30 runs with events, 44 events and 15 event types.

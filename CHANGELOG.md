@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Replaced multiplicative per-sample scans in timestamp PR-AUC scoring with ordered active-interval heaps for prediction scores and event labels.
+- Versioned event precision and recall against one-to-one matching of alert episodes to eligible ground-truth events.
 - Added aggregate-only, provenance-hashed analysis for the full public MetroPT-3 compressor dataset and an opt-in rail APU compressor profile bounded to its observed mode-conditioned signal envelopes.
 - Made severity control sampled communication loss, single-signal loss, quality degradation, and the blend strength of sensor-stuck effects; documented and tested those semantics.
 - Added versioned, scenario-recorded numeric overrides for the MetroPT rail APU process profile, with validation for unsupported/non-finite parameters and invalid time constants.

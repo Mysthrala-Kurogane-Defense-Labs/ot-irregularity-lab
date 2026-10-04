@@ -11,7 +11,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from ot_lab.evaluation import _timestamp_scores, evaluate
+from ot_lab.evaluation import _event_detection_metrics, _timestamp_scores, evaluate
 from ot_lab.models import Anomaly, AssetSpec, Scenario
 from ot_lab.process import ProcessState, regime_at, simulate_step
 from ot_lab.simulation import (
@@ -97,11 +97,146 @@ def test_event_benchmark_reports_detection_and_artifacts(tmp_path):
     assert result["f1"] == 1
     assert result["event_type_metrics"]["bearing_degradation"]["detection_rate"] == 1
     assert result["event_overlapping_alert_windows"] == 1
+    assert result["metric_version"] == "2.0.0"
+    assert result["alert_episode_count"] == 1
+    assert result["false_positive_alert_episodes"] == 0
     assert result["false_positive_windows"] == 0
     assert result["window_recall"] == 1
     assert result["window_pr_auc"] == 1
     assert (tmp_path / "report" / "metrics.json").exists()
     assert (tmp_path / "report" / "report.html").exists()
+
+
+def test_event_precision_counts_alert_episodes_and_merges_configured_gaps(tmp_path):
+    scenario = fixture_scenario(anomaly={
+        "type": "sensor_bias", "asset": "ASSET-01", "start": 5,
+        "duration": 10, "parameters": {"signal": "spindle_power_kw", "bias": 1.0},
+    })
+    run_dir = tmp_path / "run"
+    write_run(scenario, 78, run_dir)
+    event = json.loads((run_dir / "ground_truth.json").read_text(encoding="utf-8"))["events"][0]
+    start = datetime.fromisoformat(event["observed_start"])
+    predictions = tmp_path / "fragmented-alerts.jsonl"
+    windows = [(start, start + timedelta(seconds=4)), (start + timedelta(seconds=5), start + timedelta(seconds=9))]
+    predictions.write_text("".join(json.dumps({
+        "asset_id": "ASSET-01", "window_start": left.isoformat(),
+        "window_end": right.isoformat(), "irregularity_score": 0.9,
+    }) + "\n" for left, right in windows), encoding="utf-8")
+
+    separate = evaluate(run_dir / "ground_truth.json", predictions, tmp_path / "separate",
+                        telemetry_path=run_dir / "telemetry.parquet")
+    merged = evaluate(run_dir / "ground_truth.json", predictions, tmp_path / "merged",
+                      telemetry_path=run_dir / "telemetry.parquet", alert_merge_gap_seconds=1)
+
+    assert separate["event_detection_rate"] == 1
+    assert separate["alert_episode_count"] == 2
+    assert separate["true_positive_alert_episodes"] == 1
+    assert separate["false_positive_alert_episodes"] == 1
+    assert separate["event_precision"] == pytest.approx(0.5)
+    assert separate["event_recall"] == 1
+    assert separate["event_f1"] == pytest.approx(2 / 3)
+    assert separate["false_positive_windows"] == 0
+    assert merged["alert_episode_count"] == 1
+    assert merged["event_precision"] == 1
+    assert merged["event_recall"] == 1
+
+
+def test_fragmented_alerts_must_individually_meet_event_coverage_threshold(tmp_path):
+    scenario = fixture_scenario(anomaly={
+        "type": "sensor_bias", "asset": "ASSET-01", "start": 5,
+        "duration": 10, "parameters": {"signal": "spindle_power_kw", "bias": 1.0},
+    })
+    run_dir = tmp_path / "run"
+    write_run(scenario, 79, run_dir)
+    event = json.loads((run_dir / "ground_truth.json").read_text(encoding="utf-8"))["events"][0]
+    start = datetime.fromisoformat(event["observed_start"])
+    event_duration_s = (
+        datetime.fromisoformat(event["observed_end"]) - start
+    ).total_seconds()
+    fragment_s = event_duration_s * 0.05
+    predictions = tmp_path / "subthreshold-fragments.jsonl"
+    windows = [
+        (start, start + timedelta(seconds=fragment_s)),
+        (start + timedelta(seconds=2), start + timedelta(seconds=2 + fragment_s)),
+    ]
+    predictions.write_text("".join(json.dumps({
+        "asset_id": "ASSET-01", "window_start": left.isoformat(),
+        "window_end": right.isoformat(), "irregularity_score": 0.9,
+    }) + "\n" for left, right in windows), encoding="utf-8")
+
+    result = evaluate(run_dir / "ground_truth.json", predictions, tmp_path / "report",
+                      telemetry_path=run_dir / "telemetry.parquet", overlap=0.1)
+
+    assert result["events"][0]["coverage_threshold_met"] is True
+    assert result["event_detection_rate"] == 0
+    assert result["true_positive_alert_episodes"] == 0
+    assert result["false_positive_alert_episodes"] == 2
+
+
+def test_alert_merge_gap_does_not_count_gap_as_event_coverage():
+    event_start = datetime(2024, 1, 1, tzinfo=UTC)
+    event_end = event_start + timedelta(seconds=100)
+    event = {"event_id": "gap-coverage", "asset_id": "ASSET-01", "type": "sensor_bias",
+             "start": event_start.isoformat(), "end": event_end.isoformat(),
+             "observed_start": event_start.isoformat(), "observed_end": event_end.isoformat()}
+    predictions = pl.DataFrame([
+        {"asset_id": "ASSET-01", "window_start": event_start.isoformat(),
+         "window_end": (event_start + timedelta(seconds=4)).isoformat(), "irregularity_score": 0.9},
+        {"asset_id": "ASSET-01", "window_start": (event_start + timedelta(seconds=6)).isoformat(),
+         "window_end": (event_start + timedelta(seconds=10)).isoformat(), "irregularity_score": 0.9},
+    ])
+    result = _event_detection_metrics([event], predictions, 0.5, 0.1, 1.0, 2.0)
+    assert result["alert_episode_count"] == 1
+    assert result["events"][0]["coverage"] == pytest.approx(0.08)
+    assert result["event_detection_rate"] == 0
+
+
+def test_one_alert_episode_cannot_claim_multiple_ground_truth_events(tmp_path):
+    scenario = Scenario.model_validate({
+        "scenario_id": "two-events-one-alert", "run_id": "two-events-one-alert-1",
+        "duration_s": 60, "sampling_interval_ms": 1000,
+        "assets": [{"asset_id": "ASSET-01", "asset_class": "cnc"}],
+        "anomalies": [
+            {"type": "sensor_bias", "asset": "ASSET-01", "start": 10, "duration": 10,
+             "parameters": {"signal": "spindle_power_kw", "bias": 1.0}},
+            {"type": "sensor_bias", "asset": "ASSET-01", "start": 40, "duration": 10,
+             "parameters": {"signal": "spindle_power_kw", "bias": 1.0}},
+        ],
+    })
+    run_dir = tmp_path / "run"
+    write_run(scenario, 79, run_dir)
+    events = json.loads((run_dir / "ground_truth.json").read_text(encoding="utf-8"))["events"]
+    predictions = tmp_path / "broad-alert.jsonl"
+    predictions.write_text(json.dumps({
+        "asset_id": "ASSET-01", "window_start": events[0]["observed_start"],
+        "window_end": events[1]["observed_end"], "irregularity_score": 0.9,
+    }) + "\n", encoding="utf-8")
+
+    result = evaluate(run_dir / "ground_truth.json", predictions, tmp_path / "report",
+                      telemetry_path=run_dir / "telemetry.parquet")
+
+    assert result["alert_episode_count"] == 1
+    assert result["event_overlapping_alert_windows"] == 1
+    assert result["true_positive_events"] == 1
+    assert result["missed_events"] == 1
+    assert result["event_precision"] == 1
+    assert result["event_recall"] == pytest.approx(0.5)
+    assert result["event_f1"] == pytest.approx(2 / 3)
+    assert sum(item["coverage_threshold_met"] for item in result["events"]) == 2
+    assert sum(item["detected"] for item in result["events"]) == 1
+
+
+def test_event_evaluation_rejects_negative_alert_merge_gap(tmp_path):
+    run_dir = tmp_path / "run"
+    write_run(fixture_scenario(), 80, run_dir)
+    predictions = tmp_path / "predictions.jsonl"
+    predictions.write_text(json.dumps({
+        "asset_id": "ASSET-01", "window_start": EPOCH.isoformat(),
+        "window_end": (EPOCH + timedelta(seconds=1)).isoformat(), "irregularity_score": 0.2,
+    }) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="finite non-negative"):
+        evaluate(run_dir / "ground_truth.json", predictions, tmp_path / "out",
+                 telemetry_path=run_dir / "telemetry.parquet", alert_merge_gap_seconds=-1)
 
 
 def test_benchmark_html_escapes_scenario_identifiers(tmp_path):
@@ -310,6 +445,46 @@ def test_benchmark_class_imbalance_and_mixed_assets_use_half_open_intervals(tmp_
     timestamps = [EPOCH + timedelta(seconds=i) for i in range(40)]
     assert sum(labels) == 10
     assert not labels[timestamps.index(event_end_dt)]
+
+
+def test_timestamp_scoring_uses_highest_active_score_with_half_open_windows():
+    start = EPOCH
+    records = [
+        {"asset_id": "ASSET-01", "window_start": start.isoformat(),
+         "window_end": (start + timedelta(seconds=2)).isoformat(), "irregularity_score": 0.4},
+        {"asset_id": "ASSET-01", "window_start": start.isoformat(),
+         "window_end": (start + timedelta(seconds=4)).isoformat(), "irregularity_score": 0.9},
+        {"asset_id": "ASSET-01", "window_start": (start + timedelta(seconds=1)).isoformat(),
+         "window_end": (start + timedelta(seconds=3)).isoformat(), "irregularity_score": 0.8},
+    ]
+    predictions = pl.read_ndjson(io.BytesIO("".join(json.dumps(row) + "\n" for row in records).encode()))
+    metadata = {
+        "started_at": start.isoformat(), "duration_s": 4, "sampling_interval_ms": 1000,
+        "asset_ids": ["ASSET-01", "ASSET-02"],
+    }
+
+    scores, labels = _timestamp_scores([], predictions, pl.DataFrame(), metadata)
+
+    assert scores == [0.9, 0.9, 0.9, 0.9, 0.0, 0.0, 0.0, 0.0]
+    assert labels == [False] * 8
+
+
+def test_timestamp_scoring_labels_overlapping_events_with_half_open_windows():
+    start = EPOCH
+    events = [
+        {"asset_id": "ASSET-01", "start": (start + timedelta(seconds=offset)).isoformat(),
+         "end": (start + timedelta(seconds=offset + 2)).isoformat()}
+        for offset in (3, 0, 1, 4)
+    ]
+    metadata = {
+        "started_at": start.isoformat(), "duration_s": 8, "sampling_interval_ms": 1000,
+        "asset_ids": ["ASSET-01"],
+    }
+
+    scores, labels = _timestamp_scores(events, pl.DataFrame(), pl.DataFrame(), metadata)
+
+    assert scores == [0.0] * 8
+    assert labels == [True, True, True, True, True, True, False, False]
 
 
 def test_normal_only_benchmark_reports_pr_auc_as_undefined(tmp_path):
@@ -1096,10 +1271,14 @@ with open(sys.argv[2], "w", encoding="utf-8") as output:
     monkeypatch.setattr(sys, "argv", [
         "ot-lab", "compare", "--run", str(run_dir), "--predictions",
         *(str(path) for path in prediction_paths), "--output", str(comparison_dir),
+        "--alert-merge-gap-seconds", "0.5",
     ])
     main()
     rows = json.loads((comparison_dir / "comparison.json").read_text(encoding="utf-8"))
     assert [row["model"] for row in rows] == ["quiet-baseline", "always-alert"]
+    assert all(row["metric_version"] == "2.0.0" for row in rows)
+    assert rows[1]["alert_episode_count"] == 1
+    assert rows[1]["false_positive_alert_episodes"] == 0
     assert rows[0]["event_detection_rate"] == 0
     assert rows[1]["event_detection_rate"] == 1
     assert rows[1]["window_precision"] == pytest.approx(4 / 30)
