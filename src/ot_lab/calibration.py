@@ -115,7 +115,7 @@ def analyze_metropt(path: Path) -> dict[str, Any]:
 def write_metropt_analysis(input_path: Path, output_path: Path) -> Path:
     report = analyze_metropt(input_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    output_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     return output_path
 
 
@@ -249,5 +249,5 @@ def analyze_zema_hydraulic(path: Path) -> dict[str, Any]:
 def write_zema_hydraulic_analysis(input_path: Path, output_path: Path) -> Path:
     report = analyze_zema_hydraulic(input_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    output_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     return output_path

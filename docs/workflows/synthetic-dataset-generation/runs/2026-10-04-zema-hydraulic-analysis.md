@@ -9,7 +9,7 @@ Add a reproducible, aggregate-only analysis for the openly licensed UCI Conditio
 - Input: official UCI ZIP, stored outside the repository at `%TEMP%\ot-lab-uci-hydraulic-447.zip`.
 - Input SHA-256: `24128aad2ee45eea7e6b63ebbd9992cdf25d0483a2cebefbfc13bc69079af1f2`.
 - Command: `uv run --python 3.12 ot-lab calibration analyze-hydraulic --input <archive.zip> --output calibration/zema-hydraulic-summary.json`.
-- Aggregate report SHA-256: `EC90BEC7C722D78825C1F831576837EC612AEFE48C25BBD1E4B789D96550D165`.
+- Aggregate report SHA-256: `3EEEDBFC1E19A246285594A35BE9805577B3AF178A9D9DF8921CBB9E0C3F4AD6` (UTF-8 with LF line endings for cross-platform byte identity).
 - Analyzer behavior: computes per-cycle summaries and isolated component-condition quantiles; emits provenance and label counts without raw rows.
 
 ## Observations and limits
