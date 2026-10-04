@@ -32,7 +32,7 @@ The 1,000-run [OT Irregularity Training Dataset v0.3.0](https://github.com/Mysth
 
 The model input is `telemetry.parquet`; never pass `ground_truth.json` or `run_metadata.json` to a model submission. The evaluator reads predictions and ground truth in a separate process. Do not mount ground truth into inference containers.
 
-Run a fresh Docker challenge with a separate hidden-case distribution: `uv run ot-lab challenge --suite suites/training-v0.3.yaml --challenge-suite suites/challenge-v0.2.yaml --image MODEL_IMAGE --output results/model-a`. Each invocation uses an OS-generated seed; suite definitions are public and scenario parameters are sampled afresh.
+Run fresh hidden Docker cases with a separate challenge distribution: `uv run ot-lab challenge --suite suites/training-v0.3.yaml --challenge-suite suites/challenge-v0.2.yaml --image MODEL_IMAGE --cases 100 --output results/model-a`. Every case gets a new container and OS-generated seed. The command retains only pooled metrics and an aggregate report; predictions, telemetry, ground truth and resolved case details are temporary.
 
 Generate large train/validation/test datasets with deterministic process workers: `uv run ot-lab dataset create --suite suites/normal-operation-v0.1.yaml --runs 1000 --seed 424242 --workers 4 --output datasets/normal-v1`. The default worker count is one; see [BENCHMARK.md](BENCHMARK.md) for measured throughput and its limits.
 

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `ot-lab challenge --cases N` to evaluate independent runtime-generated hidden cases and persist pooled event/window metrics plus macro per-case PR-AUC only.
+- Include expected-grid confusion counts in benchmark metrics so multi-case window scores can be pooled without retaining per-case outputs.
 - Published OT Irregularity Training Dataset v0.5.0 with 3,000 independently seeded runs under CC BY 4.0; telemetry and label partitions are separate and remote asset hashes were verified.
 - Added a MetroPT-3-informed compressor `air_leak` event that couples configurable pressure loss and compensating motor-current increase; added versioned training v0.3 and challenge v0.2 distributions without changing older suites.
 - Added compressor-containing randomized asset profiles, increased the explicit `air_leak` sampling weight for suite coverage, and bounded seeded backtracking for multi-event placement; a 300-run validation draw records 26 air leaks across train/validation/test, with one in test.

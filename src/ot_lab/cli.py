@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 from . import __version__
@@ -13,7 +14,7 @@ from .calibration import (
     write_zema_hydraulic_analysis,
 )
 from .datasets import package_dataset
-from .evaluation import evaluate
+from .evaluation import aggregate_challenge_metrics, evaluate, write_challenge_report
 from .simulation import batch, generate_challenge, read_scenario, replay, write_run
 from .submission import DEFAULT_MAX_OUTPUT_BYTES, run_docker_submission, run_submission
 
@@ -84,13 +85,16 @@ def main() -> None:
     docker_cmd.add_argument("--output", type=Path, required=True)
     docker_cmd.add_argument("--timeout", type=int, default=300)
     docker_cmd.add_argument("--max-output-bytes", type=int, default=DEFAULT_MAX_OUTPUT_BYTES)
-    challenge_cmd = commands.add_parser("challenge", help="generate and score a fresh hidden-seed challenge case")
+    challenge_cmd = commands.add_parser("challenge", help="generate and score fresh hidden-seed challenge cases")
     challenge_cmd.add_argument("--suite", type=Path, required=True)
     challenge_cmd.add_argument("--challenge-suite", type=Path, help="optional independently versioned hidden-case distribution")
     challenge_cmd.add_argument("--image", required=True)
     challenge_cmd.add_argument("--output", type=Path, required=True)
     challenge_cmd.add_argument("--timeout", type=int, default=300)
     challenge_cmd.add_argument("--max-output-bytes", type=int, default=DEFAULT_MAX_OUTPUT_BYTES)
+    challenge_cmd.add_argument("--cases", type=int, default=1, help="number of independent hidden cases to run (default: 1)")
+    challenge_cmd.add_argument("--threshold", type=float, default=0.5)
+    challenge_cmd.add_argument("--overlap", type=float, default=0.1)
     challenge_cmd.add_argument("--alert-merge-gap-seconds", type=float, default=0.0)
     opcua_cmd = commands.add_parser("opcua-replay", help="serve canonical telemetry over optional OPC UA adapter (loopback by default)")
     opcua_cmd.add_argument("--telemetry", type=Path, required=True)
@@ -142,17 +146,39 @@ def main() -> None:
         print(run_docker_submission(args.image, args.run, args.output, args.timeout, args.max_output_bytes))
     elif args.command == "challenge":
         import tempfile
-        args.output.mkdir(parents=True, exist_ok=True)
+        if args.cases <= 0:
+            parser.error("--cases must be positive")
+        if not math.isfinite(args.threshold) or not 0 <= args.threshold <= 1:
+            parser.error("--threshold must be between 0 and 1")
+        if not math.isfinite(args.overlap) or not 0 <= args.overlap <= 1:
+            parser.error("--overlap must be between 0 and 1")
+        if not math.isfinite(args.alert_merge_gap_seconds) or args.alert_merge_gap_seconds < 0:
+            parser.error("--alert-merge-gap-seconds must be a finite non-negative number")
+        case_metrics = []
         with tempfile.TemporaryDirectory(prefix="ot-lab-challenge-") as temp:
-            case_dir, truth_path = generate_challenge(args.suite, Path(temp), challenge_suite_path=args.challenge_suite)
-            predictions = Path(temp) / "predictions.jsonl"
-            run_docker_submission(args.image, case_dir, predictions, args.timeout, args.max_output_bytes)
-            result_dir = Path(temp) / "result"
-            result = evaluate(truth_path, predictions, result_dir, telemetry_path=case_dir / "telemetry.parquet", metadata_path=case_dir / "run_metadata.json", alert_merge_gap_seconds=args.alert_merge_gap_seconds)
-            # Persist only scored output; temporary telemetry, predictions, truth and seed are discarded.
-            (args.output / "metrics.json").write_text((result_dir / "metrics.json").read_text(encoding="utf-8"), encoding="utf-8")
-            (args.output / "report.html").write_text((result_dir / "report.html").read_text(encoding="utf-8"), encoding="utf-8")
-            print(json.dumps({key: value for key, value in result.items() if key != "events"}, indent=2))
+            temp_path = Path(temp)
+            for index in range(args.cases):
+                case_root = temp_path / f"case-{index:05d}"
+                case_dir, truth_path = generate_challenge(args.suite, case_root, challenge_suite_path=args.challenge_suite)
+                predictions = case_root / "predictions.jsonl"
+                run_docker_submission(args.image, case_dir, predictions, args.timeout, args.max_output_bytes)
+                result = evaluate(
+                    truth_path, predictions, case_root / "result", args.threshold, args.overlap,
+                    case_dir / "telemetry.parquet", case_dir / "run_metadata.json", args.alert_merge_gap_seconds,
+                )
+                case_metrics.append({
+                    key: result[key] for key in (
+                        "metric_version", "threshold", "overlap_threshold", "alert_merge_gap_seconds",
+                        "event_count", "true_positive_events", "alert_episode_count", "false_positive_windows",
+                        "exposure_asset_hours", "false_positive_duration_s", "window_true_positives",
+                        "window_false_positives", "window_false_negatives", "expected_sample_count",
+                        "mean_event_coverage", "mean_time_to_first_detection_s", "pr_auc", "event_type_metrics",
+                    )
+                })
+            aggregate = aggregate_challenge_metrics(case_metrics)
+            # Persist only pooled metrics. Temporary predictions, event rows, telemetry, ground truth and seeds are discarded.
+            write_challenge_report(aggregate, args.output)
+        print(json.dumps(aggregate, indent=2))
     elif args.command == "opcua-replay":
         import asyncio
 

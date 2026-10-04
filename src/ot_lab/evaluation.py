@@ -206,6 +206,7 @@ def _event_detection_metrics(
         "event_precision_definition": "one-to-one matched alert episodes / thresholded alert episodes",
         "event_recall_definition": "one-to-one matched events / ground-truth events",
         "event_detection_rate": recall, "true_positive_events": int(tp),
+        "event_count": len(events),
         "false_positive_windows": fp, "missed_events": int(fn),
         "alert_episode_count": episode_count,
         "true_positive_alert_episodes": int(tp),
@@ -344,6 +345,10 @@ def evaluate(ground_truth_path: Path, predictions_path: Path, output_dir: Path, 
     result["window_f1"] = 2 * result["window_precision"] * result["window_recall"] / (result["window_precision"] + result["window_recall"]) if result["window_precision"] + result["window_recall"] else 0.0
     result["window_pr_auc"] = _window_pr_auc(events, predictions, telemetry, metadata)
     result["pr_auc"] = result["window_pr_auc"]
+    result["expected_sample_count"] = len(sample_labels)
+    result["window_true_positives"] = int(sample_tp)
+    result["window_false_positives"] = int(sample_fp)
+    result["window_false_negatives"] = int(sample_fn)
     result["run_id"] = truth["run_id"]
     result["prediction_count"] = predictions.height
     result["exposure_asset_hours"] = exposure_hours
@@ -367,3 +372,92 @@ def evaluate(ground_truth_path: Path, predictions_path: Path, output_dir: Path, 
 <h2>Events</h2><table><thead><tr><th>Event</th><th>Asset</th><th>Type</th><th>Detected</th><th>Coverage</th></tr></thead><tbody>{event_rows}</tbody></table></html>"""
     (output_dir / "report.html").write_text(html, encoding="utf-8")
     return result
+
+
+def aggregate_challenge_metrics(cases: list[dict[str, Any]]) -> dict[str, Any]:
+    """Pool additive counts across hidden cases without retaining per-case labels."""
+    if not cases:
+        raise ValueError("challenge requires at least one completed case")
+    contract = (cases[0]["metric_version"], cases[0]["threshold"], cases[0]["overlap_threshold"], cases[0]["alert_merge_gap_seconds"])
+    if any((case["metric_version"], case["threshold"], case["overlap_threshold"], case["alert_merge_gap_seconds"]) != contract for case in cases):
+        raise ValueError("challenge cases must use identical metric versions and thresholds")
+
+    def sums(key: str) -> int | float:
+        return sum(case.get(key, 0) for case in cases)
+    events = int(sums("event_count"))
+    detected = int(sums("true_positive_events"))
+    episodes = int(sums("alert_episode_count"))
+    exposure = sums("exposure_asset_hours")
+    false_windows = int(sums("false_positive_windows"))
+    window_tp = int(sums("window_true_positives"))
+    window_fp = int(sums("window_false_positives"))
+    window_fn = int(sums("window_false_negatives"))
+    precision = detected / episodes if episodes and events else (0.0 if events else None)
+    recall = detected / events if events else None
+    f1 = 2 * precision * recall / (precision + recall) if precision is not None and recall is not None and precision + recall else (0.0 if events else None)
+    coverage_weight = sums("event_count")
+    latency_weight = detected
+    auc_values = [case["pr_auc"] for case in cases if case.get("pr_auc") is not None]
+
+    event_types: dict[str, dict[str, float]] = {}
+    for case in cases:
+        for event_type, metrics in case.get("event_type_metrics", {}).items():
+            aggregate = event_types.setdefault(event_type, {"event_count": 0, "detected_count": 0.0, "coverage_sum": 0.0})
+            count = int(metrics["event_count"])
+            aggregate["event_count"] += count
+            aggregate["detected_count"] += float(metrics["detection_rate"]) * count
+            aggregate["coverage_sum"] += float(metrics["mean_coverage"]) * count
+    for metrics in event_types.values():
+        count = metrics["event_count"]
+        metrics["detection_rate"] = metrics.pop("detected_count") / count if count else 0.0
+        metrics["mean_coverage"] = metrics.pop("coverage_sum") / count if count else 0.0
+
+    mean_coverage = sum(float(case["mean_event_coverage"]) * int(case["event_count"]) for case in cases if case.get("mean_event_coverage") is not None) / coverage_weight if coverage_weight else None
+    mean_latency = sum(float(case["mean_time_to_first_detection_s"]) * int(case["true_positive_events"]) for case in cases if case.get("mean_time_to_first_detection_s") is not None) / latency_weight if latency_weight else None
+    window_precision = window_tp / (window_tp + window_fp) if window_tp + window_fp else 0.0
+    window_recall = window_tp / (window_tp + window_fn) if window_tp + window_fn else 0.0
+    window_f1 = 2 * window_precision * window_recall / (window_precision + window_recall) if window_precision + window_recall else 0.0
+    return {
+        "metric_version": contract[0], "threshold": contract[1], "overlap_threshold": contract[2],
+        "alert_merge_gap_seconds": contract[3], "challenge_case_count": len(cases),
+        "event_count": events, "true_positive_events": detected, "missed_events": events - detected,
+        "alert_episode_count": episodes, "false_positive_alert_episodes": episodes - detected,
+        "precision": precision, "recall": recall, "f1": f1,
+        "event_precision": precision, "event_recall": recall, "event_f1": f1,
+        "event_detection_rate": recall,
+        "event_precision_definition": "pooled one-to-one matched alert episodes / thresholded alert episodes across challenge cases",
+        "event_recall_definition": "pooled one-to-one matched events / ground-truth events across challenge cases",
+        "false_positive_windows": false_windows,
+        "false_positives_per_asset_hour": false_windows / max(exposure, 1e-9),
+        "false_positives_per_asset_day": false_windows / max(exposure, 1e-9) * 24,
+        "false_positive_alert_episodes_per_asset_hour": (episodes - detected) / max(exposure, 1e-9),
+        "false_positive_duration_s": sums("false_positive_duration_s"),
+        "exposure_asset_hours": exposure,
+        "window_true_positives": window_tp, "window_false_positives": window_fp,
+        "window_false_negatives": window_fn, "expected_sample_count": int(sums("expected_sample_count")),
+        "window_precision": window_precision, "window_recall": window_recall, "window_f1": window_f1,
+        "window_pr_auc": sum(auc_values) / len(auc_values) if auc_values else None,
+        "pr_auc": sum(auc_values) / len(auc_values) if auc_values else None,
+        "pr_auc_aggregation": "macro average of per-case expected-sample average precision over cases with positive samples",
+        "pr_auc_case_count": len(auc_values),
+        "mean_event_coverage": mean_coverage,
+        "percentage_of_event_detected": mean_coverage,
+        "mean_time_to_first_detection_s": mean_latency,
+        "mean_detection_latency_s": mean_latency,
+        "event_type_metrics": event_types,
+    }
+
+
+def write_challenge_report(metrics: dict[str, Any], output_dir: Path) -> None:
+    """Write only aggregate challenge results; never render individual hidden cases."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
+    fmt = lambda value: "n/a" if value is None else f"{value:.3f}"
+    html = f"""<!doctype html><html lang="en"><meta charset="utf-8"><title>OT Irregularity Lab challenge</title>
+<style>body{{font:16px system-ui;max-width:900px;margin:3rem auto;color:#16202a}}</style>
+<h1>Challenge aggregate report</h1><p>Metrics v{escape(str(metrics['metric_version']))} | cases {metrics['challenge_case_count']} | threshold {metrics['threshold']:.3f} | overlap {metrics['overlap_threshold']:.1%}</p>
+<ul><li>Event precision: {fmt(metrics['event_precision'])}</li><li>Event recall: {fmt(metrics['event_recall'])}</li><li>Event F1: {fmt(metrics['event_f1'])}</li>
+<li>Macro per-case PR-AUC: {fmt(metrics['pr_auc'])}</li><li>False-positive windows / asset-hour: {metrics['false_positives_per_asset_hour']:.3f}</li>
+<li>Unmatched alert episodes: {metrics['false_positive_alert_episodes']}</li><li>Mean event coverage: {fmt(metrics['mean_event_coverage'])}</li></ul>
+<p>Per-case predictions, telemetry, ground truth, seeds and resolved scenarios are not included in this report.</p></html>"""
+    (output_dir / "report.html").write_text(html, encoding="utf-8")
