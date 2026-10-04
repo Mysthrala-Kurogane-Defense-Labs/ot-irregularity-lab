@@ -37,7 +37,7 @@ class AssetSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
     asset_id: str
     asset_class: AssetType
-    process_profile: Literal["generic", "metropt3_rail_apu"] = "generic"
+    process_profile: Literal["generic", "metropt3_rail_apu", "centrifugal_vfd"] = "generic"
     process_profile_version: Literal["1.0.0"] = "1.0.0"
     process_parameters: dict[str, float] = Field(default_factory=dict)
     regimes: list[Regime] = Field(
@@ -53,6 +53,8 @@ class AssetSpec(BaseModel):
         asset_class = info.data.get("asset_class")
         if value == "metropt3_rail_apu" and asset_class != "compressor":
             raise ValueError("metropt3_rail_apu process_profile requires asset_class=compressor")
+        if value == "centrifugal_vfd" and asset_class != "pump":
+            raise ValueError("centrifugal_vfd process_profile requires asset_class=pump")
         return value
 
     @field_validator("process_parameters")
@@ -67,7 +69,16 @@ class AssetSpec(BaseModel):
             "vibration_base_mm_s", "vibration_load_gain_mm_s", "vibration_noise_mm_s",
         }
         generic_parameters = {"load_scale", "actuator_tau_s", "thermal_time_constant_scale", "sensor_noise_scale", "initial_temperature_offset_c"}
-        allowed = rail_apu_parameters if profile == "metropt3_rail_apu" else generic_parameters
+        pump_parameters = {
+            "pump_rated_speed_rpm", "pump_rated_flow_l_min", "pump_rated_pressure_bar",
+            "pump_total_efficiency", "pump_supply_voltage_v", "pump_power_factor",
+            "pump_idle_current_a", "pump_temperature_rise_c",
+        }
+        allowed = (
+            rail_apu_parameters if profile == "metropt3_rail_apu"
+            else generic_parameters | pump_parameters if profile == "centrifugal_vfd"
+            else generic_parameters
+        )
         unknown = set(value) - allowed
         if unknown:
             raise ValueError(f"unknown process parameters: {', '.join(sorted(unknown))}")
@@ -84,6 +95,46 @@ class AssetSpec(BaseModel):
                 raise ValueError("initial_temperature_offset_c must be within -30..50 C")
             if key.endswith(("noise_a", "noise_bar", "noise_c", "noise_mm_s")) and parameter < 0:
                 raise ValueError(f"{key} must be non-negative")
+        pump_ranges = {
+            "pump_rated_speed_rpm": (500, 3500),
+            "pump_rated_flow_l_min": (100, 2000),
+            "pump_rated_pressure_bar": (0.5, 13),
+            "pump_total_efficiency": (0.1, 1),
+            "pump_supply_voltage_v": (100, 1000),
+            "pump_power_factor": (0.1, 1),
+            "pump_idle_current_a": (0, 20),
+            "pump_temperature_rise_c": (1, 100),
+            "sensor_noise_scale": (0, 10),
+            "thermal_time_constant_scale": (0.01, 100),
+            "actuator_tau_s": (0.01, 100000),
+        }
+        for key, limits in pump_ranges.items():
+            if key in value and not limits[0] <= value[key] <= limits[1]:
+                raise ValueError(f"{key} must be within {limits[0]}..{limits[1]}")
+        if profile == "centrifugal_vfd":
+            params = {
+                "pump_rated_speed_rpm": 2900.0,
+                "pump_rated_flow_l_min": 750.0,
+                "pump_rated_pressure_bar": 12.0,
+                "pump_total_efficiency": 0.65,
+                "pump_supply_voltage_v": 400.0,
+                "pump_power_factor": 0.85,
+                "pump_idle_current_a": 4.0,
+            }
+            params.update(value)
+            hydraulic_power_kw = (
+                params["pump_rated_flow_l_min"] * params["pump_rated_pressure_bar"] / 600
+            )
+            rated_current = params["pump_idle_current_a"] + (
+                hydraulic_power_kw * 1000
+                / params["pump_total_efficiency"]
+                / (3 ** 0.5 * params["pump_supply_voltage_v"] * params["pump_power_factor"])
+            )
+            maximum_regime_current = params["pump_idle_current_a"] + (
+                rated_current - params["pump_idle_current_a"]
+            ) * (0.86 * 1.5) ** 3
+            if maximum_regime_current > 100:
+                raise ValueError("pump parameters exceed the pump motor_current_a engineering maximum at HIGH_LOAD")
         return value
 
 

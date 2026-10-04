@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add optional `centrifugal_vfd` pump process profile with parameter validation, coupled speed/flow/pressure/power/temperature behavior, and a runnable normal-operation scenario. Existing generic pump behavior is unchanged.
+- Bump simulator package to `0.5.0`; telemetry and ground-truth schema versions remain unchanged.
 - Add `ot-lab challenge --cases N` to evaluate independent runtime-generated hidden cases and persist pooled event/window metrics plus macro per-case PR-AUC only.
 - Include expected-grid confusion counts in benchmark metrics so multi-case window scores can be pooled without retaining per-case outputs.
 - Published OT Irregularity Training Dataset v0.5.0 with 3,000 independently seeded runs under CC BY 4.0; telemetry and label partitions are separate and remote asset hashes were verified.

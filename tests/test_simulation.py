@@ -571,6 +571,54 @@ def test_metropt_rail_apu_profile_rejects_nonpositive_time_constants():
         )
 
 
+def test_centrifugal_vfd_profile_uses_pump_affinity_relations():
+    parameters = {"sensor_noise_scale": 1e-10, "actuator_tau_s": 0.01}
+    asset = AssetSpec(
+        asset_id="P-1", asset_class="pump", process_profile="centrifugal_vfd",
+        process_parameters=parameters,
+    )
+    low_state, high_state = ProcessState(temperature=22), ProcessState(temperature=22)
+    low = simulate_step(asset, low_state, "LOW_LOAD", 100, 22, np.random.default_rng(3))
+    high = simulate_step(asset, high_state, "HIGH_LOAD", 100, 22, np.random.default_rng(3))
+    assert high["flow_l_min"] / low["flow_l_min"] == pytest.approx(high["rpm"] / low["rpm"])
+    assert high["pressure_bar"] / low["pressure_bar"] == pytest.approx((high["rpm"] / low["rpm"]) ** 2)
+    assert high["motor_current_a"] > low["motor_current_a"]
+    assert high_state.temperature > low_state.temperature
+
+
+def test_centrifugal_vfd_profile_rejects_wrong_asset_and_unworkable_motor_rating():
+    with pytest.raises(ValueError, match="requires asset_class=pump"):
+        AssetSpec(asset_id="C-1", asset_class="compressor", process_profile="centrifugal_vfd")
+    with pytest.raises(ValueError, match="engineering maximum"):
+        AssetSpec(
+            asset_id="P-1", asset_class="pump", process_profile="centrifugal_vfd",
+            process_parameters={"pump_rated_flow_l_min": 2000, "pump_rated_pressure_bar": 13},
+        )
+
+
+def test_centrifugal_vfd_profile_rejects_unknown_parameters():
+    with pytest.raises(ValueError, match="unknown process parameters"):
+        AssetSpec(
+            asset_id="P-1", asset_class="pump", process_profile="centrifugal_vfd",
+            process_parameters={"pump_efficiency": 0.8},
+        )
+
+
+def test_centrifugal_vfd_scenario_generation_and_replay(tmp_path):
+    from pathlib import Path
+
+    from ot_lab.simulation import read_scenario, replay, write_run
+
+    scenario = read_scenario(Path(__file__).parents[1] / "scenarios" / "normal-pump-centrifugal-vfd.yaml")
+    source_dir, replay_dir = tmp_path / "run", tmp_path / "replayed"
+    write_run(scenario, 42, source_dir)
+    replay(source_dir, replay_dir)
+    assert pl.read_parquet(source_dir / "telemetry.parquet").equals(
+        pl.read_parquet(replay_dir / "telemetry.parquet")
+    )
+    assert (source_dir / "ground_truth.json").read_bytes() == (replay_dir / "ground_truth.json").read_bytes()
+
+
 def test_sampling_jitter_changes_intervals_deterministically():
     scenario = Scenario.model_validate({
         "scenario_id": "jitter", "duration_s": 20, "sampling_interval_ms": 1000,

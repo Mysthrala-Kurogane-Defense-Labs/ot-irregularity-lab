@@ -1,5 +1,7 @@
 # Synthetic dataset generation records
 
+- 2026-10-04 — [Centrifugal pump VFD profile](runs/2026-10-04-centrifugal-vfd-profile.md): optional affinity-law process profile, scenario example, deterministic replay and physical-relationship checks.
+
 - 2026-10-03 — [Normal process variation](runs/2026-10-03-normal-process-variation.md): randomized per-asset load setpoint, response time, and sensor-noise values with event-free 30-seed verification.
 - 2026-10-03 — [Parallel run generation](runs/2026-10-03-parallel-run-generation.md): deterministic `--workers` support, byte-identical partitions, cross-worker resume, and measured 60-run throughput.
 - 2026-10-03 — [Linux process-pool deadlock](runs/2026-10-03-linux-process-pool.md): replaced fork with spawn after a reproducible post-Polars worker hang; Linux WSL full suite passed after the fix.

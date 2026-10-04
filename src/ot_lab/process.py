@@ -19,7 +19,7 @@ SIGNAL_META: dict[str, dict[str, tuple[str, str, float, float]]] = {
         "cycle_state": ("state", "code", 0, 4),
     },
     "pump": {
-        "rpm": ("rotational_speed", "rpm", 0, 3600),
+        "rpm": ("rotational_speed", "rpm", 0, 5000),
         "motor_current_a": ("current", "A", 0, 100),
         "motor_temperature_c": ("temperature", "degC", 0, 120),
         "vibration_mm_s": ("vibration", "mm/s", 0, 25),
@@ -105,6 +105,14 @@ def simulate_step(
 ) -> dict[str, float]:
     """Advance one coupled process step; noise perturbs, never drives, the plant."""
     parameters = asset.process_parameters
+    if asset.asset_class == "pump" and asset.process_profile == "centrifugal_vfd":
+        target = float(np.clip(REGIME_LOAD[regime] * parameters.get("load_scale", 1.0), 0.0, 1.0))
+        actuator_tau = parameters.get("actuator_tau_s", 3.0 if regime == "WARMUP" else 1.5)
+        alpha = 1.0 - np.exp(-dt / actuator_tau)
+        state.load += (target - state.load) * alpha
+        result = _simulate_centrifugal_vfd(asset, state, regime, dt, ambient_c, rng)
+        state.previous_signals = result.copy()
+        return result
     target = float(np.clip(REGIME_LOAD[regime] * parameters.get("load_scale", 1.0), 0.0, 1.0))
     # A first-order actuator response models process lag and loop settling.
     actuator_tau = parameters.get("actuator_tau_s", 3.0 if regime == "WARMUP" else 1.5)
@@ -168,6 +176,58 @@ def simulate_step(
             "load_pct": _bounded(100 * load + noise(1), 0, 100),
             "photoeye_rate": _bounded(180 * speed * load + noise(2), 0, 500),
         }
+    state.previous_signals = result.copy()
+    return result
+
+
+def _simulate_centrifugal_vfd(
+    asset: AssetSpec,
+    state: ProcessState,
+    regime: Regime,
+    dt: float,
+    ambient_c: float,
+    rng: np.random.Generator,
+) -> dict[str, float]:
+    """Simplified VFD centrifugal pump at a fixed system duty characteristic.
+
+    Affinity relations set Q proportional to speed, head/pressure to speed
+    squared, and hydraulic power to speed cubed. Efficiency is held constant;
+    these assumptions are illustrative and are not a pump-specific curve fit.
+    """
+    parameters = {
+        "pump_rated_speed_rpm": 2900.0,
+        "pump_rated_flow_l_min": 750.0,
+        "pump_rated_pressure_bar": 12.0,
+        "pump_total_efficiency": 0.65,
+        "pump_supply_voltage_v": 400.0,
+        "pump_power_factor": 0.85,
+        "pump_idle_current_a": 4.0,
+        "pump_temperature_rise_c": 45.0,
+    }
+    parameters.update(asset.process_parameters)
+    noise_scale = asset.process_parameters.get("sensor_noise_scale", 1.0)
+    thermal_scale = asset.process_parameters.get("thermal_time_constant_scale", 1.0)
+    state.rpm = parameters["pump_rated_speed_rpm"] * state.load
+    ratio = max(state.rpm, 0.0) / parameters["pump_rated_speed_rpm"]
+    flow = parameters["pump_rated_flow_l_min"] * ratio
+    pressure = parameters["pump_rated_pressure_bar"] * ratio**2
+    hydraulic_power_kw = flow * pressure / 600.0
+    electrical_power_w = hydraulic_power_kw * 1000.0 / parameters["pump_total_efficiency"]
+    current = parameters["pump_idle_current_a"] + electrical_power_w / (
+        3**0.5 * parameters["pump_supply_voltage_v"] * parameters["pump_power_factor"]
+    )
+    state.temperature += (
+        ambient_c + parameters["pump_temperature_rise_c"] * ratio**3 - state.temperature
+    ) * (1.0 - np.exp(-max(dt, 0.0) / (100.0 * thermal_scale)))
+    noise = lambda scale: float(rng.normal(0.0, scale * noise_scale))
+    result = {
+        "rpm": _bounded(state.rpm + noise(5.0), 0, 5000),
+        "motor_current_a": _bounded(current + noise(0.4), 0, 100),
+        "motor_temperature_c": _bounded(state.temperature, 0, 120),
+        "vibration_mm_s": _bounded(0.35 + 1.2 * ratio + noise(0.08), 0, 25),
+        "flow_l_min": _bounded(flow + noise(3.0), 0, 3000),
+        "pressure_bar": _bounded(pressure + noise(0.08), 0, 30),
+    }
     state.previous_signals = result.copy()
     return result
 

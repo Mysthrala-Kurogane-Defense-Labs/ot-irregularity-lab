@@ -3,7 +3,7 @@
 These are low-cost engineering relationships for reproducible dataset generation, not high-fidelity plant or safety models. Each asset has load, actuator, temperature, and vibration states. Regime load is an input to coupled equations; noise perturbs sensor/process values and never replaces the process equations.
 
 - CNC: load drives spindle speed, power, feed, coolant pressure, vibration, and thermal target; temperature follows a first-order lag.
-- Pump: RPM drives flow; a simple system curve relates RPM/load to pressure; load and pressure drive current; motor temperature lags its target.
+- Pump generic profile: RPM drives flow; a simple system curve relates RPM/load to pressure; load and pressure drive current; motor temperature lags its target.
 - Compressor: load drives current, pressure, discharge/oil temperatures, and vibration.
 - Conveyor: load drives current, speed, temperature, vibration, and photoeye rate.
 
@@ -14,6 +14,8 @@ The compressor-only `air_leak` anomaly represents a pressure loss with a compens
 `AssetSpec.process_profile` selects a model independently of the anomaly or evaluator. `generic` is the default and uses the illustrative generic compressor equations. `metropt3_rail_apu` opts into a profile informed by the aggregate MetroPT-3 report in `calibration/metropt-3-summary.json`; it is valid only for compressor assets. Each asset records `process_profile_version` (`1.0.0`) and may override explicit `process_parameters` in scenario YAML. Supported overrides include loaded/off current and pressure anchors, load and thermal time constants, and sensor-noise scales. Unknown parameters, non-finite values and non-positive time constants are rejected. A resolved scenario preserves overrides for replay and dataset provenance.
 
 The MetroPT profile's mode-conditioned current and pressure envelopes are descriptive. The load mapping, thermal time constant, discharge-temperature and vibration equations remain clearly identified simulator assumptions; this profile is not a digital twin.
+
+The optional pump `centrifugal_vfd` profile (version `1.0.0`) uses explicit rated speed, flow, pressure, total efficiency, supply voltage, power factor, idle current and thermal rise parameters. Its illustrative fixed-duty affinity equations use flow proportional to speed, pressure/head proportional to speed squared, and hydraulic power proportional to speed cubed; current is estimated from three-phase electrical power. Constant efficiency, the selected system duty characteristic, thermal target and vibration relation are simplifying assumptions. They are not inferred product ratings or a calibrated pump curve. Parameter validation bounds the outputs to the canonical engineering ranges. The historical `generic` pump equations remain unchanged. See the `normal-pump-centrifugal-vfd.yaml` example and the official [Grundfos pump curves](https://www.grundfos.com/ca/learn/research-and-insights/pump-curves) and [speed-controlled operation](https://www.grundfos.com/au/learn/research-and-insights/speed-controlled-operation) material.
 
 Generic process assets support reproducible per-asset overrides for `load_scale`, `actuator_tau_s`, `thermal_time_constant_scale`, `sensor_noise_scale`, and initial temperature offset. The normal-operation suite samples these in declared ranges so otherwise normal runs include distinct production setpoints, response speeds, initial thermal states, and sensor variability. The numeric ranges are a benchmark design choice, not inferred industrial population distributions.
 

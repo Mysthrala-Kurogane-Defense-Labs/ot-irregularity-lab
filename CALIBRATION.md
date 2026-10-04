@@ -40,6 +40,10 @@ The manufacturer [Atlas Copco GA 11⁺–30 50 Hz datasheet](https://www.atlasco
 
 The [Grundfos CR databooklet](https://api.grundfos.com/literature/Grundfosliterature-6511688.pdf) publishes model-specific head-flow-power-efficiency curves for CR pumps under stated test/standard conditions. It supports modelling pump flow, pressure/head, shaft power and efficiency as coupled quantities. Digitizing a curve requires recording the pump variant, speed, impeller, test conditions, source page and digitization error; this has not yet been done.
 
+## Optional variable-speed centrifugal pump
+
+Grundfos' [pump-curve overview](https://www.grundfos.com/ca/learn/research-and-insights/pump-curves) explains that a Q-H curve relates flow to head and should be considered with the system characteristic; its [speed-control overview](https://www.grundfos.com/au/learn/research-and-insights/speed-controlled-operation) shows that speed changes produce different pump curves. The optional `centrifugal_vfd` profile uses conventional approximate affinity relations (flow proportional to speed, head to speed squared, power to speed cubed) as a fixed-duty simplification. Efficiency, system curve, thermal response and vibration remain configurable or explicit assumptions. Defaults are illustrative simulator settings, not vendor catalog ratings. No proprietary curve was digitized or redistributed. This profile improves model structure but does not constitute pump-specific calibration.
+
 ## What remains uncalibrated
 
 The sources above do not establish this project's thermal time constants, load-transition lag, control-loop settling, vibration baselines, bearing-fault progression, sensor noise distributions or cross-asset failure rates. Keep these as explicit simulator hypotheses and configurable distributions. Do not tune them to improve any detector score. A calibrated profile needs an independently reviewable parameter table with source, unit conversion, operating conditions, uncertainty and license/provenance.
