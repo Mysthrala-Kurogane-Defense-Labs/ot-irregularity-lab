@@ -1680,6 +1680,12 @@ def test_docker_submission_passes_only_minimal_environment(tmp_path, monkeypatch
     assert "--read-only" in command
     assert "--cap-drop=ALL" in command
     assert "--security-opt=no-new-privileges:true" in command
+    assert "--pids-limit=128" in command
+    assert "--memory=2g" in command
+    assert "--cpus=2" in command
+    assert "--user=65534:65534" in command
+    assert "--tmpfs" in command
+    assert "/tmp:rw,noexec,nosuid,size=64m" in command
     assert "--env" in command and "OT_LAB_INPUT=/ot-lab/input.parquet" in command
     mounts = [command[i + 1] for i, item in enumerate(command[:-1]) if item == "--mount"]
     assert len(mounts) == 2
@@ -1690,6 +1696,11 @@ def test_docker_submission_passes_only_minimal_environment(tmp_path, monkeypatch
     assert "--log-driver=none" in command
     assert "OT_LAB_OUTPUT=/ot-lab/output.jsonl" in command
     assert "GH_TOKEN" not in [command[i + 1] for i, item in enumerate(command[:-1]) if item == "--env"]
+    environment = [command[i + 1] for i, item in enumerate(command[:-1]) if item == "--env"]
+    assert environment == [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "TMPDIR=/tmp", "OT_LAB_INPUT=/ot-lab/input.parquet", "OT_LAB_OUTPUT=/ot-lab/output.jsonl",
+    ]
     assert removed == [["docker", "rm", "--force", "fake-container-id"]]
     assert out.read_text() == "{}\n"
 
