@@ -18,6 +18,15 @@ Generate a reproducible, model-agnostic synthetic dataset from a versioned suite
 
 Anomaly severity 0 suppresses injection and severity 1 applies configured magnitudes or rates. Intermediate severity scales continuous effects and seeded dropout/quality probabilities. Outcomes remain discrete per observation; severity changes their probability.
 
+## Run an ephemeral hidden challenge
+
+1. Select the public training suite and a versioned challenge distribution. Keep labels and generated cases private to the evaluator host.
+2. Run `uv run ot-lab challenge --suite <training-suite.yaml> --challenge-suite <challenge-suite.yaml> --image <local-image> --cases <N> --output <results-dir>`. The image must already exist locally; every case gets a fresh container and one case's telemetry input.
+3. Use one threshold, event-overlap threshold and alert-merge gap for the full batch. Review `metrics.json` and `report.html`: event/window counts and asset-hour rates are pooled, event coverage/latency means are event-weighted, and PR-AUC is macro-averaged per case over cases with positives.
+4. Confirm the command writes only aggregate metrics and the report. Challenge temp files are deleted on normal completion or a Python-managed error; abrupt host termination may leave the OS temp directory behind. Do not treat a local challenge run as an authoritative contest score when the submission operator controls the evaluator host.
+
+Record the command, image identity, case count, metrics contract, Docker environment, local test result, output-leakage check and limitations in a dated run record. See [the multi-case challenge record](runs/2026-10-04-multi-case-hidden-challenge.md).
+
 ## Evidence boundaries
 
 The generated telemetry is synthetic and based on simplified process models. Real dataset studies inform coverage design, not plant-failure priors or physical calibration. Dataset publication requires the license declared in the suite and a separate artifact integrity check. Local tests do not substitute for GitHub Actions CI.

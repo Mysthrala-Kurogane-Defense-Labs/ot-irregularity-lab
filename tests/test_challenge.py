@@ -6,8 +6,128 @@ import polars as pl
 import pytest
 import yaml
 
+from ot_lab.evaluation import aggregate_challenge_metrics
 from ot_lab.models import Scenario
 from ot_lab.simulation import _generate_suite_scenario, generate_challenge
+
+
+def test_challenge_aggregation_pools_counts_and_macro_averages_per_case_pr_auc():
+    base = {
+        "metric_version": "2.0.0", "threshold": 0.5, "overlap_threshold": 0.1,
+        "alert_merge_gap_seconds": 0.0, "event_type_metrics": {},
+    }
+    cases = [
+        {
+            **base, "event_count": 2, "true_positive_events": 1, "missed_events": 1,
+            "alert_episode_count": 3, "false_positive_windows": 5, "exposure_asset_hours": 2.5,
+            "false_positive_duration_s": 20, "window_true_positives": 5,
+            "window_false_positives": 5, "window_false_negatives": 5, "expected_sample_count": 15,
+            "mean_event_coverage": 0.5, "mean_time_to_first_detection_s": 4,
+            "pr_auc": 0.5,
+            "event_type_metrics": {"bearing_degradation": {"event_count": 2, "detection_rate": 0.5, "mean_coverage": 0.5}},
+        },
+        {
+            **base, "event_count": 1, "true_positive_events": 0, "missed_events": 1,
+            "alert_episode_count": 2, "false_positive_windows": 3, "exposure_asset_hours": 1.5,
+            "false_positive_duration_s": 10, "window_true_positives": 0,
+            "window_false_positives": 3, "window_false_negatives": 10, "expected_sample_count": 13,
+            "mean_event_coverage": 0.0, "mean_time_to_first_detection_s": None,
+            "pr_auc": 0.25,
+            "event_type_metrics": {"bearing_degradation": {"event_count": 1, "detection_rate": 0.0, "mean_coverage": 0.0}},
+        },
+        {
+            **base, "event_count": 0, "true_positive_events": 0, "missed_events": 0,
+            "alert_episode_count": 1, "false_positive_windows": 2, "exposure_asset_hours": 1.0,
+            "false_positive_duration_s": 5, "window_true_positives": 0,
+            "window_false_positives": 2, "window_false_negatives": 0, "expected_sample_count": 10,
+            "mean_event_coverage": None, "mean_time_to_first_detection_s": None,
+            "pr_auc": None,
+        },
+    ]
+
+    result = aggregate_challenge_metrics(cases)
+
+    assert result["challenge_case_count"] == 3
+    assert result["event_count"] == 3
+    assert result["true_positive_events"] == 1
+    assert result["alert_episode_count"] == 6
+    assert result["event_precision"] == pytest.approx(1 / 6)
+    assert result["event_recall"] == pytest.approx(1 / 3)
+    assert result["event_f1"] == pytest.approx(2 / 9)
+    assert result["false_positives_per_asset_hour"] == pytest.approx(10 / 5)
+    assert result["mean_event_coverage"] == pytest.approx(1 / 3)
+    assert result["mean_time_to_first_detection_s"] == 4
+    assert result["pr_auc"] == pytest.approx(0.375)
+    assert result["pr_auc_case_count"] == 2
+    assert result["event_type_metrics"]["bearing_degradation"]["event_count"] == 3
+    assert "events" not in result and "run_id" not in result
+
+
+def test_challenge_aggregation_rejects_mixed_metric_contracts():
+    base = {
+        "metric_version": "2.0.0", "threshold": 0.5, "overlap_threshold": 0.1,
+        "alert_merge_gap_seconds": 0.0,
+    }
+    with pytest.raises(ValueError, match="identical metric versions and thresholds"):
+        aggregate_challenge_metrics([base, {**base, "threshold": 0.6}])
+
+
+def test_challenge_cli_runs_separate_cases_and_only_persists_aggregate(tmp_path, monkeypatch, capsys):
+    import sys
+
+    from ot_lab import cli
+
+    observed_runs = []
+
+    def fake_generate(_suite, root, challenge_suite_path=None):
+        case = root / "run"
+        case.mkdir(parents=True)
+        (case / "telemetry.parquet").write_bytes(b"synthetic telemetry")
+        truth = case / "ground_truth.json"
+        truth.write_text('{"seed":"must-not-escape"}', encoding="utf-8")
+        return case, truth
+
+    def fake_container(_image, run_dir, output, *_args):
+        assert (run_dir / "telemetry.parquet").is_file()
+        output.write_text('{"prediction":true}', encoding="utf-8")
+        observed_runs.append((run_dir, output))
+        return output
+
+    def fake_evaluate(_truth, _predictions, _output, threshold, overlap, *_args):
+        return {
+            "metric_version": "2.0.0", "threshold": threshold, "overlap_threshold": overlap,
+            "alert_merge_gap_seconds": 0.0, "event_count": 1, "true_positive_events": 1,
+            "missed_events": 0, "alert_episode_count": 1, "false_positive_windows": 0,
+            "exposure_asset_hours": 1.0, "false_positive_duration_s": 0.0,
+            "window_true_positives": 5, "window_false_positives": 0,
+            "window_false_negatives": 0, "expected_sample_count": 5,
+            "mean_event_coverage": 1.0, "mean_time_to_first_detection_s": 0.0,
+            "pr_auc": 1.0, "event_type_metrics": {}, "run_id": "challenge-hidden",
+            "events": [{"event_id": "secret-event"}],
+        }
+
+    monkeypatch.setattr(cli, "generate_challenge", fake_generate)
+    monkeypatch.setattr(cli, "run_docker_submission", fake_container)
+    monkeypatch.setattr(cli, "evaluate", fake_evaluate)
+    output = tmp_path / "challenge-result"
+    monkeypatch.setattr(sys, "argv", [
+        "ot-lab", "challenge", "--suite", "suite.yaml", "--challenge-suite", "hidden.yaml",
+        "--image", "model:local", "--cases", "3", "--output", str(output),
+    ])
+
+    cli.main()
+
+    metrics = json.loads((output / "metrics.json").read_text(encoding="utf-8"))
+    report = (output / "report.html").read_text(encoding="utf-8")
+    assert len(observed_runs) == 3
+    assert len({run for run, _ in observed_runs}) == 3
+    assert metrics["challenge_case_count"] == 3
+    assert metrics["true_positive_events"] == 3
+    assert "challenge-hidden" not in json.dumps(metrics)
+    assert "secret-event" not in json.dumps(metrics) + report
+    assert "must-not-escape" not in json.dumps(metrics) + report
+    assert sorted(path.name for path in output.iterdir()) == ["metrics.json", "report.html"]
+    assert json.loads(capsys.readouterr().out)["challenge_case_count"] == 3
 
 
 def test_challenge_uses_hidden_seed_and_does_not_persist_replay_seed(tmp_path):
