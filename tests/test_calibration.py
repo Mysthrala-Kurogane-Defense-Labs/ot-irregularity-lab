@@ -83,19 +83,21 @@ def test_bosch_cnc_analysis_emits_source_group_aggregates_only(tmp_path):
     source.parent.mkdir(parents=True)
     with h5py.File(source, "w") as archive:
         archive.create_dataset("vibration_data", data=np.array([[3.0, 4.0, 0.0], [3.0, 4.0, 0.0]]))
+    repeated = tmp_path / "M01" / "OP07" / "good" / "M01_Aug_2019_OP07_001.h5"
+    with h5py.File(repeated, "w") as archive:
+        archive.create_dataset("vibration_data", data=np.array([[4.0, 3.0, 0.0], [4.0, 3.0, 0.0]]))
     bad = tmp_path / "M01" / "OP07" / "bad" / "M01_Aug_2019_OP07_000.h5"
     bad.parent.mkdir(parents=True)
     with h5py.File(bad, "w") as archive:
         archive.create_dataset("vibration_data", data=np.array([[0.0, 0.0, 12.0], [0.0, 0.0, 12.0]]))
 
     report = analyze_bosch_cnc(tmp_path, "test-revision")
-    assert report["source"]["input_files"] == 2
-    assert report["label_counts"] == {"good": 1, "bad": 1}
-    bad_group, good = report["segment_aggregates"]
-    assert bad_group["source_label"] == "bad"
+    assert report["source"]["input_files"] == 3
+    assert report["label_counts"] == {"good": 2, "bad": 1}
+    assert report["privacy_suppression"] == {"minimum_segments_per_group": 2, "suppressed_singleton_groups": 1}
+    good, = report["segment_aggregates"]
     assert good["source_label"] == "good"
     assert good["vector_rms_p05_p50_p95"]["p50"] == pytest.approx(5.0)
-    assert bad_group["vector_rms_p05_p50_p95"]["p50"] == pytest.approx(12.0)
     assert "source samples" in " ".join(report["interpretation"])
     output = write_bosch_cnc_analysis(tmp_path, tmp_path / "report.json", "test-revision")
     assert json.loads(output.read_text(encoding="utf-8"))["source"]["source_revision"] == "test-revision"

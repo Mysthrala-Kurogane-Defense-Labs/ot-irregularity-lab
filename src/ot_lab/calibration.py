@@ -293,8 +293,9 @@ def analyze_bosch_cnc(input_dir: Path, source_revision: str | None = None) -> di
                 data = source["vibration_data"]
                 if data.ndim != 2 or data.shape[1] != 3 or data.shape[0] < 2 or data.dtype.kind not in "fiu":
                     raise ValueError(f"expected an N x 3 numeric vibration array: {relative}")
+                sample_count = int(data.shape[0])
                 vector_square_sum = 0.0
-                remaining = data.shape[0]
+                remaining = sample_count
                 chunk_size = 65_536
                 for start in range(0, data.shape[0], chunk_size):
                     chunk = np.asarray(data[start : start + chunk_size], dtype=np.float64)
@@ -311,15 +312,19 @@ def analyze_bosch_cnc(input_dir: Path, source_revision: str | None = None) -> di
         record = {
             "axis_rms": axis_rms,
             "vector_rms": vector_rms,
-            "samples": int(data.shape[0]),
-            "duration_s": data.shape[0] / 2000,
+            "samples": sample_count,
+            "duration_s": sample_count / 2000,
         }
         grouped.setdefault((machine, operation, label, f"{month}_{year}"), []).append(record)
         label_counts[label] += 1
         machine_counts.setdefault(machine, {"good": 0, "bad": 0})[label] += 1
 
     groups: list[dict[str, Any]] = []
+    suppressed_singleton_groups = 0
     for (machine, operation, label, timeframe), items in sorted(grouped.items()):
+        if len(items) < 2:
+            suppressed_singleton_groups += 1
+            continue
         vector = np.array([item["vector_rms"] for item in items])
         axes = np.array([item["axis_rms"] for item in items])
         durations = np.array([item["duration_s"] for item in items])
@@ -357,12 +362,16 @@ def analyze_bosch_cnc(input_dir: Path, source_revision: str | None = None) -> di
         "machine_label_counts": machine_counts,
         "grouping": ["machine", "operation", "source good/bad label", "six-month timeframe identifier"],
         "segment_aggregates": groups,
+        "privacy_suppression": {
+            "minimum_segments_per_group": 2,
+            "suppressed_singleton_groups": suppressed_singleton_groups,
+        },
         "interpretation": [
             "The source labels indicate manually annotated process condition and do not identify a specific fault mechanism or fault onset time.",
             "Vibration RMS is a descriptive feature of each operation segment; different machines, tools, and timeframes are not interchangeable baselines.",
             "The source provides acceleration data, not the Lab's velocity vibration signal in mm/s; absolute values must not be mapped to the canonical signal.",
             "The good/bad classes are strongly imbalanced and their counts are not failure prevalence estimates.",
-            "This analysis emits group quantiles and provenance only; it does not emit source samples or segment-level measurements.",
+            "This analysis emits group quantiles only for groups of at least two segments; singleton groups are suppressed, and source samples or segment-level measurements are not emitted.",
         ],
     }
 

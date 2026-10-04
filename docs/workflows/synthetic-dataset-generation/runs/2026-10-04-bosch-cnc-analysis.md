@@ -11,8 +11,8 @@ Create a reproducible aggregate-only inspection of the openly licensed Bosch CNC
 - Files and bytes analyzed: 1,702 HDF5 segments; 952,229,265 bytes.
 - Input manifest SHA-256: `355dc601413254f0a4079696a12714b77a08a502ab4e0a1ef7d71508a0aa48e8`. It hashes the sorted relative paths and each file's SHA-256.
 - Command: `uv run ot-lab calibration analyze-bosch-cnc --input-dir <CNC_Machining/data> --source-revision d60581d6a3ab6015dcc5488c3d76112bb8e1bcb1 --output calibration/bosch-cnc-summary.json`.
-- Aggregate report SHA-256: `35e78bc13b3ecd7a6d7d78d3fa3f78be3c713aad7c11e52295b4152b55463e2e` (UTF-8 with LF line endings for cross-platform byte identity).
-- The report contains per-machine, operation, source-label, and timeframe quantiles for segment duration and three-axis/resultant RMS; it contains no source arrays or per-segment measurements.
+- Aggregate report SHA-256: `BA2D70D443C20E29C4EE63F0820DF843A19DBC22707B1EA9D21F1FBE60037AC1` (UTF-8 with LF line endings for cross-platform byte identity).
+- The report contains per-machine, operation, source-label, and timeframe quantiles for groups with at least two segments. It reports only the number of suppressed singleton groups, not their keys or measurements. No source arrays or per-segment measurements are emitted.
 
 ## Findings and limits
 
@@ -25,6 +25,7 @@ During retrieval, a sparse Git checkout stalled while fetching the dataset blobs
 ## Validation
 
 - Analyzer input: 1,702/1,702 expected HDF5 files, all three numeric axes present, no non-finite samples, zero parsing errors.
+- Aggregate output: 221 groups retained; 43 singleton groups suppressed by the minimum-two-segment rule.
 - Report regeneration produced the same SHA-256 as the committed aggregate report.
 - Windows Python 3.12 with `uv sync --extra dev --extra calibration --extra opcua --extra modbus --group lint`: 135 tests passed, Ruff passed, `uv lock --check` passed, and `git diff --check` passed.
 - WSL/Linux Python 3.12 with the same extras: 134 tests passed, one platform-specific test skipped, Ruff and `uv lock --check` passed.
