@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import sys
+import zipfile
 from pathlib import Path
 
 from . import __version__
@@ -13,7 +15,7 @@ from .calibration import (
     write_metropt_analysis,
     write_zema_hydraulic_analysis,
 )
-from .datasets import package_dataset
+from .datasets import package_dataset, verify_dataset_package
 from .evaluation import aggregate_challenge_metrics, evaluate, write_challenge_report
 from .simulation import batch, generate_challenge, read_scenario, replay, write_run
 from .submission import DEFAULT_MAX_OUTPUT_BYTES, run_docker_submission, run_submission
@@ -38,7 +40,7 @@ def main() -> None:
     batch_cmd.add_argument("--seed", type=int, default=42)
     batch_cmd.add_argument("--output", type=Path, required=True)
     batch_cmd.add_argument("--workers", type=int, default=1, help="parallel run-generation processes (default: 1)")
-    dataset_cmd = commands.add_parser("dataset", help="create a seeded dataset from a generation suite")
+    dataset_cmd = commands.add_parser("dataset", help="create, package, or verify a dataset")
     dataset_subcommands = dataset_cmd.add_subparsers(dest="dataset_command", required=True)
     create_cmd = dataset_subcommands.add_parser("create", help="generate train/validation/test runs and a manifest")
     create_cmd.add_argument("--suite", type=Path, required=True)
@@ -54,6 +56,9 @@ def main() -> None:
     package_cmd.add_argument("--license-file", type=Path, required=True, help="full data license notice to include with each artifact")
     package_cmd.add_argument("--partition", dest="partitions", nargs="+", choices=("train", "validation", "test"))
     package_cmd.add_argument("--output", type=Path, required=True, help="new directory for per-partition ZIPs and release manifest")
+    verify_cmd = dataset_subcommands.add_parser("verify", help="verify a packaged release's checksums and telemetry/label separation")
+    verify_cmd.add_argument("--release", type=Path, required=True, help="release directory produced by `ot-lab dataset package`")
+    verify_cmd.add_argument("--json", action="store_true", help="print a machine-readable verification report")
     calibration_cmd = commands.add_parser("calibration", help="analyze public reference data locally; source records are not copied")
     calibration_sub = calibration_cmd.add_subparsers(dest="calibration_command", required=True)
     metropt_cmd = calibration_sub.add_parser("analyze-metropt", help="summarize MetroPT-3 compressor modes and cadence")
@@ -130,6 +135,19 @@ def main() -> None:
         print(args.output / "dataset_manifest.json")
     elif args.command == "dataset" and args.dataset_command == "package":
         print(package_dataset(args.dataset, args.dataset_version, args.output, args.license_file, args.data_license, args.partitions))
+    elif args.command == "dataset" and args.dataset_command == "verify":
+        try:
+            report = verify_dataset_package(args.release)
+        except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile, EOFError) as error:
+            print(f"ot-lab: dataset verification failed: {error}", file=sys.stderr)
+            raise SystemExit(1) from None
+        if args.json:
+            print(json.dumps(report, indent=2))
+        else:
+            print(
+                f"Verified {report['dataset_id']} v{report['dataset_version']}: "
+                f"{len(report['partitions'])} partition(s), checksums and archive CRCs valid; labels are separate."
+            )
     elif args.command == "calibration":
         if args.calibration_command == "analyze-metropt":
             print(write_metropt_analysis(args.input, args.output))
@@ -193,10 +211,22 @@ def main() -> None:
         asyncio.run(replay_modbus(args.telemetry, args.host, args.port, args.device_id, realtime=not args.fast, stay_open=args.serve))
     elif args.command == "compare":
         rows = []
+        summary_keys = (
+            "metric_version", "threshold", "overlap_threshold", "alert_merge_gap_seconds",
+            "precision", "recall", "f1", "event_precision", "event_recall", "event_f1",
+            "pr_auc", "window_precision", "window_recall", "window_f1", "window_pr_auc",
+            "event_count", "true_positive_events", "missed_events", "event_detection_rate",
+            "alert_episode_count", "false_positive_alert_episodes",
+            "false_positive_alert_episodes_per_asset_hour", "false_positive_windows",
+            "false_positives_per_asset_hour", "false_positives_per_asset_day",
+            "false_positive_duration_s", "exposure_asset_hours", "mean_event_coverage",
+            "percentage_of_event_detected", "mean_time_to_first_detection_s",
+            "mean_detection_latency_s", "event_type_metrics",
+        )
         for prediction in args.predictions:
             model_output = args.output / prediction.stem
             metrics = evaluate(args.run / "ground_truth.json", prediction, model_output, args.threshold, args.overlap, args.run / "telemetry.parquet", args.run / "run_metadata.json", args.alert_merge_gap_seconds)
-            rows.append({"model": prediction.stem, "metric_version": metrics["metric_version"], "precision": metrics["precision"], "recall": metrics["recall"], "f1": metrics["f1"], "pr_auc": metrics["pr_auc"], "window_precision": metrics["window_precision"], "window_recall": metrics["window_recall"], "alert_episode_count": metrics["alert_episode_count"], "false_positive_alert_episodes": metrics["false_positive_alert_episodes"], "false_positive_windows": metrics["false_positive_windows"], "false_positives_per_asset_hour": metrics["false_positives_per_asset_hour"], "event_detection_rate": metrics["event_detection_rate"], "percentage_of_event_detected": metrics["percentage_of_event_detected"]})
+            rows.append({"model": prediction.stem, **{key: metrics[key] for key in summary_keys}})
         args.output.mkdir(parents=True, exist_ok=True)
         (args.output / "comparison.json").write_text(json.dumps(rows, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(rows, indent=2))

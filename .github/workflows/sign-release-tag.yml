@@ -1,0 +1,78 @@
+name: Sign release tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: New software tag (vX.Y.Z) or dataset tag (dataset-vX.Y.Z)
+        required: true
+        type: string
+      commit:
+        description: Full commit SHA reachable from origin/main
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  sign-tag:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: release-signing
+    permissions:
+      checks: read
+      contents: write
+      id-token: write
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - name: Install Go
+        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version: '1.27.x'
+      - name: Install pinned Gitsign
+        env:
+          GOBIN: ${{ runner.temp }}/gobin
+        run: go install github.com/sigstore/gitsign@v0.17.1
+      - name: Create, verify, and push a keyless signed tag
+        env:
+          GITSIGN_TOKEN_PROVIDER: github-actions
+          GOBIN: ${{ runner.temp }}/gobin
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_COMMIT: ${{ inputs.commit }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^(v[0-9]+\.[0-9]+\.[0-9]+|dataset-v[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Tag must be vX.Y.Z or dataset-vX.Y.Z" >&2
+            exit 1
+          fi
+          if [[ ! "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Commit must be a full 40-character lowercase SHA" >&2
+            exit 1
+          fi
+          git fetch origin main --tags
+          git cat-file -e "$RELEASE_COMMIT^{commit}"
+          git merge-base --is-ancestor "$RELEASE_COMMIT" origin/main
+          for check in "test (core)" "test (opcua)" "test (modbus)"; do
+            conclusion=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_COMMIT/check-runs" \
+              --jq "[.check_runs[] | select(.name == \"$check\")] | max_by(.completed_at) | .conclusion // \"\"")
+            if [[ "$conclusion" != "success" ]]; then
+              echo "Required CI check did not succeed for $RELEASE_COMMIT: $check ($conclusion)" >&2
+              exit 1
+            fi
+          done
+          if [[ -n "$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG")" ]]; then
+            echo "Refusing to replace an existing tag: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          git -c gpg.x509.program="$GOBIN/gitsign" -c gpg.format=x509 \
+            tag --sign --message "Release $RELEASE_TAG" \
+            "$RELEASE_TAG" "$RELEASE_COMMIT"
+          "$GOBIN/gitsign" verify-tag \
+            --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+            --certificate-github-workflow-ref="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/sign-release-tag.yml@refs/heads/main" \
+            "$RELEASE_TAG"
+          git push origin "refs/tags/$RELEASE_TAG"

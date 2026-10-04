@@ -17,7 +17,7 @@ uv sync --extra dev
 uv run ot-lab generate --scenario scenarios/cnc-bearing-medium.yaml --seed 42 --output runs/cnc-0042
 uv run ot-lab replay runs/cnc-0042
 uv run ot-lab batch --suite suites/training.yaml --runs 100 --seed 42 --output datasets/training
-uv run ot-lab dataset create --suite suites/training-v0.3.yaml --runs 1000 --seed 20261005 --output datasets/ot-irregularity-training-v0.5-candidate
+uv run ot-lab dataset create --suite suites/training-v0.5.yaml --runs 1000 --seed 20261005 --output datasets/ot-irregularity-training-static-head-candidate
 ```
 
 For long runs, add `--resume` to keep per-run checkpoints after interruption. Re-run with the same suite, run count, seed, and dedicated output directory to continue generation.
@@ -32,7 +32,7 @@ The 1,000-run [OT Irregularity Training Dataset v0.3.0](https://github.com/Mysth
 
 The model input is `telemetry.parquet`; never pass `ground_truth.json` or `run_metadata.json` to a model submission. The evaluator reads predictions and ground truth in a separate process. Do not mount ground truth into inference containers.
 
-Run fresh hidden Docker cases with a separate challenge distribution: `uv run ot-lab challenge --suite suites/training-v0.3.yaml --challenge-suite suites/challenge-v0.2.yaml --image MODEL_IMAGE --cases 100 --output results/model-a`. Every case gets a new container and OS-generated seed. The command retains only pooled metrics and an aggregate report; predictions, telemetry, ground truth and resolved case details are temporary.
+Run fresh hidden Docker cases with a separate challenge distribution: `uv run ot-lab challenge --suite suites/training-v0.5.yaml --challenge-suite suites/challenge-v0.4.yaml --image MODEL_IMAGE --cases 100 --output results/model-a`. Every case gets a new container and OS-generated seed. The command retains only pooled metrics and an aggregate report; predictions, telemetry, ground truth and resolved case details are temporary.
 
 Generate large train/validation/test datasets with deterministic process workers: `uv run ot-lab dataset create --suite suites/normal-operation-v0.1.yaml --runs 1000 --seed 424242 --workers 4 --output datasets/normal-v1`. The default worker count is one; see [BENCHMARK.md](BENCHMARK.md) for measured throughput and its limits.
 

@@ -1,0 +1,23 @@
+name: Sign release assets
+
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+jobs:
+  sign-assets:
+    runs-on: ubuntu-24.04
+    environment: release-signing
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Sign and verify published release artifacts
+        uses: sigstore/gh-action-sigstore-python@790bc6befb9d733738f18d8f895854b453640ec9 # v3.5.0
+        with:
+          verify: true
+          verify-cert-identity: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/sign-release-assets.yml@${{ github.ref }}
+          verify-oidc-issuer: https://token.actions.githubusercontent.com
+          release-signing-artifacts: true

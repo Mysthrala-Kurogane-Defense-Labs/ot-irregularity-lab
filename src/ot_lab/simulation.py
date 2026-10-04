@@ -106,7 +106,23 @@ def _generate_suite_scenario(base: dict[str, Any], generation: dict[str, Any], r
     profiles = generation.get("asset_profiles", [])
     if profiles:
         profile = _weighted_choice(profiles, rng, "asset profiles")
-        data["assets"] = profile["assets"]
+        data["assets"] = json.loads(json.dumps(profile["assets"]))
+
+    process_profiles = generation.get("asset_process_profiles", [])
+    if process_profiles:
+        for asset in data["assets"]:
+            compatible = [
+                profile for profile in process_profiles
+                if asset["asset_class"] in profile.get("asset_classes", [asset["asset_class"]])
+            ]
+            if not compatible:
+                continue
+            profile = _weighted_choice(compatible, rng, f"process profiles for {asset['asset_id']}")
+            asset["process_profile"] = profile["process_profile"]
+            asset["process_profile_version"] = profile.get("process_profile_version", "1.0.0")
+            parameters = asset.setdefault("process_parameters", {})
+            for name, spec in profile.get("process_parameters", {}).items():
+                parameters[name] = _draw(spec, rng)
 
     regime_profiles = generation.get("regime_profiles", [])
     if regime_profiles:
@@ -272,13 +288,19 @@ def resolve_profiles(data: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"unknown difficulty profile {profile_name!r}")
         gain_scale = profiles[profile_name]
         params = anomaly.setdefault("parameters", {})
-        explicit_keys = ("vibration_gain", "temperature_gain", "current_gain", "flow_loss", "pressure_loss", "pressure_loss_fraction", "bias", "magnitude", "rate_per_minute")
+        explicit_keys = (
+            "vibration_gain", "temperature_gain", "current_gain", "flow_loss", "pressure_loss",
+            "pressure_loss_fraction", "bias", "magnitude", "rate_per_minute", "loss_pct",
+        )
         for key in explicit_keys:
             if key in params and isinstance(params[key], (int, float)):
                 params[key] = float(params[key]) * gain_scale
         anomaly["resolved_difficulty"] = {"profile": profile_name, "gain_scale": gain_scale}
-        if "progression" in params and params["progression"] == "linear":
-            params["progression_rate_scale"] = 1.0 / gain_scale
+        if profile_name == "very_hard" and anomaly.get("type") in {
+            "bearing_degradation", "cavitation", "air_leak", "cooling_degradation",
+            "mechanical_overload", "sensor_drift", "regime_mismatch", "maintenance_activity",
+        }:
+            params["onset_delay_power"] = 1.0
     return resolved
 
 
@@ -295,11 +317,16 @@ def _affect(
     affected: set[str] = set()
     quality = "GOOD"
     kind = event.type
-    fraction = min(1.0, max(0.0, (seconds - event.start) / max(event.duration, 1)))
+    fraction = min(1.0, max(0.0, (seconds - event.start) / event.duration))
     p = event.parameters
-    # Severity scales configured continuous magnitudes and probabilities.
-    # Full-severity outages retain their categorical behavior.
+    # Severity scales configured continuous magnitudes. Communication loss has
+    # a separate base probability and selection policy so both can be calibrated.
     severity_scale = float(np.clip(event.severity, 0.0, 1.0))
+    delay_power = float(p.get("onset_delay_power", 0.0))
+    if not np.isfinite(delay_power) or not 0 <= delay_power <= 4:
+        raise ValueError("onset_delay_power must be finite and within 0..4")
+    onset_multiplier = fraction**delay_power if delay_power else 1.0
+    linear_progress = fraction * onset_multiplier
     def draw_for(signal: str, label: str) -> float:
         token = f"{run_seed}|{event.asset}|{signal}|{sample_index}|{event.start}|{label}".encode()
         return int(hashlib.sha256(token).hexdigest()[:8], 16) / 0x100000000
@@ -312,6 +339,7 @@ def _affect(
         progress = fraction if progression == "linear" else min(1.0, fraction**2) if progression == "slow_start" else fraction**0.5 if progression == "fast_start" else None
         if progress is None:
             raise ValueError(f"unsupported bearing progression {progression!r}")
+        progress *= onset_multiplier
         affected.update(vib + temp)
         gain = float(p.get("vibration_gain", 0.20)) * progress * severity_scale
         tgain = float(p.get("temperature_gain", 0.08)) * progress * severity_scale
@@ -321,16 +349,16 @@ def _affect(
             signals[name] += 15 * tgain
     elif kind == "cavitation":
         for name in pick("vibration_mm_s", "spindle_vibration_mm_s"):
-            signals[name] += float(p.get("vibration_gain", 0.8)) * fraction * severity_scale
+            signals[name] += float(p.get("vibration_gain", 0.8)) * linear_progress * severity_scale
             affected.add(name)
         for name in pick("flow_l_min"):
-            signals[name] *= 1 - float(p.get("flow_loss", 0.12)) * fraction * severity_scale
+            signals[name] *= 1 - float(p.get("flow_loss", 0.12)) * linear_progress * severity_scale
             affected.add(name)
         for name in pick("pressure_bar", "coolant_pressure_bar"):
-            signals[name] *= 1 - float(p.get("pressure_loss", 0.10)) * fraction * severity_scale
+            signals[name] *= 1 - float(p.get("pressure_loss", 0.10)) * linear_progress * severity_scale
             affected.add(name)
         for name in pick("motor_current_a"):
-            signals[name] *= 1 + float(p.get("current_gain", 0.05)) * fraction * severity_scale
+            signals[name] *= 1 + float(p.get("current_gain", 0.05)) * linear_progress * severity_scale
             affected.add(name)
     elif kind == "air_leak":
         pressure_signals = pick("pressure_bar")
@@ -341,6 +369,7 @@ def _affect(
         progress = fraction if progression == "linear" else min(1.0, fraction**2) if progression == "slow_start" else fraction**0.5 if progression == "fast_start" else None
         if progress is None:
             raise ValueError(f"unsupported air_leak progression {progression!r}")
+        progress *= onset_multiplier
         pressure_loss = float(p.get("pressure_loss_fraction", 0.15))
         current_gain = float(p.get("current_gain", 0.20))
         if not 0 <= pressure_loss <= 1 or not 0 <= current_gain <= 1:
@@ -353,14 +382,14 @@ def _affect(
             affected.add(name)
     elif kind == "cooling_degradation":
         for name in pick("temperature_c", "oil_temperature_c", "discharge_temperature_c", "spindle_temperature_c"):
-            signals[name] += float(p.get("temperature_gain", 0.08)) * 35 * fraction * severity_scale
+            signals[name] += float(p.get("temperature_gain", 0.08)) * 35 * linear_progress * severity_scale
             affected.add(name)
     elif kind == "mechanical_overload":
         for name in pick("motor_current_a", "spindle_power_kw"):
-            signals[name] *= 1 + float(p.get("current_gain", 0.12)) * fraction * severity_scale
+            signals[name] *= 1 + float(p.get("current_gain", 0.12)) * linear_progress * severity_scale
             affected.add(name)
         for name in pick("vibration_mm_s"):
-            signals[name] *= 1 + float(p.get("vibration_gain", 0.20)) * fraction * severity_scale
+            signals[name] *= 1 + float(p.get("vibration_gain", 0.20)) * linear_progress * severity_scale
             affected.add(name)
     elif kind == "sensor_drift":
         names = [str(p["signal"])] if "signal" in p else list(signals)
@@ -368,7 +397,7 @@ def _affect(
             raise ValueError("sensor_drift references a signal absent from the target asset")
         for name in names:
             if name in signals:
-                signals[name] += float(p.get("rate_per_minute", 0.5)) * severity_scale * (seconds - event.start) / 60
+                signals[name] += float(p.get("rate_per_minute", 0.5)) * severity_scale * (seconds - event.start) / 60 * onset_multiplier
                 affected.add(name)
     elif kind == "sensor_bias":
         names = [str(p["signal"])] if "signal" in p else list(signals)
@@ -403,39 +432,13 @@ def _affect(
             quality = "UNCERTAIN"
     elif kind == "single_signal_loss":
         names = _select_loss_signals(signals, p, run_seed, event, sample_index, force_single=True)
-        if any(name not in signals for name in names):
-            raise ValueError("single_signal_loss references a signal absent from the target asset")
-        loss_pct = float(p.get("loss_pct", 100))
-        if not 0 <= loss_pct <= 100:
-            raise ValueError("loss_pct must be within 0..100")
-        for name in names:
-            if draw_for(name, "single-signal-loss") < loss_pct * severity_scale / 100:
-                signals.pop(name, None)
-                affected.add(name)
+        _apply_telemetry_loss(signals, names, p, severity_scale, draw_for, "single-signal-loss", affected)
     elif kind == "asset_communication_loss":
-        loss_pct = float(p.get("loss_pct", 100))
-        if not 0 <= loss_pct <= 100:
-            raise ValueError("loss_pct must be within 0..100")
-        for name in list(signals):
-            if draw_for(name, "asset-communication-loss") < loss_pct * severity_scale / 100:
-                signals.pop(name, None)
-                affected.add(name)
+        names = _select_loss_signals(signals, p, run_seed, event, sample_index)
+        _apply_telemetry_loss(signals, names, p, severity_scale, draw_for, "asset-communication-loss", affected)
     elif kind == "missing_telemetry":
-        loss_pct = float(p.get("loss_pct", 100 if kind == "asset_communication_loss" else 25))
-        if not 0 <= loss_pct <= 100:
-            raise ValueError("loss_pct must be within 0..100")
-        loss_pct *= severity_scale
         candidates = _select_loss_signals(signals, p, run_seed, event, sample_index)
-        if loss_pct >= 100:
-            affected.update(candidates)
-            for name in candidates:
-                signals.pop(name, None)
-        else:
-            for name in candidates:
-                # Stable hashed selection per timestamp, no hidden state or extra RNG consumption.
-                if draw_for(name, "missing-telemetry") < loss_pct / 100:
-                    affected.add(name)
-                    signals.pop(name)
+        _apply_telemetry_loss(signals, candidates, p, severity_scale, draw_for, "missing-telemetry", affected)
     elif kind == "quality_degradation":
         if draw_for("__asset__", "quality-degradation") < severity_scale:
             quality = "BAD"
@@ -443,7 +446,7 @@ def _affect(
     elif kind == "regime_mismatch":
         targets = pick("load_pct", "spindle_power_kw", "motor_current_a", "feed_rate")
         for name in targets:
-            signals[name] *= 1 - (1 - float(p.get("load_multiplier", 0.7))) * severity_scale
+            signals[name] *= 1 - (1 - float(p.get("load_multiplier", 0.7))) * linear_progress * severity_scale
             affected.add(name)
     elif kind == "multivariate_novelty":
         # Each selected channel remains inside engineering bounds; the joint pattern is unusual.
@@ -475,7 +478,7 @@ def _affect(
                 affected.add(name)
     elif kind == "maintenance_activity":
         for name in pick("motor_current_a", "spindle_power_kw", "load_pct"):
-            signals[name] *= 1 - (1 - float(p.get("load_multiplier", 0.1))) * severity_scale
+            signals[name] *= 1 - (1 - float(p.get("load_multiplier", 0.1))) * linear_progress * severity_scale
             affected.add(name)
     return signals, affected, quality
 
@@ -495,8 +498,23 @@ def _select_loss_signals(
         names = list(dict.fromkeys(raw))
     else:
         mode = "single" if force_single else str(parameters.get("tag_selection", "all"))
+        if mode == "weighted":
+            weights = parameters.get("tag_weights")
+            if not isinstance(weights, dict) or not weights:
+                raise ValueError("weighted tag_selection requires a non-empty tag_weights mapping")
+            unknown_weights = set(weights) - set(available)
+            if unknown_weights:
+                raise ValueError(f"tag_weights references unknown signals: {', '.join(sorted(unknown_weights))}")
+            numeric_weights = {name: float(weights.get(name, 0.0)) for name in available}
+            if any(not np.isfinite(weight) or weight < 0 for weight in numeric_weights.values()) or sum(numeric_weights.values()) <= 0:
+                raise ValueError("tag_weights must contain finite, non-negative values with a positive total")
+            token = f"{run_seed}|{event.asset}|{event.start}|tag-selection".encode()
+            rng = np.random.default_rng(int(hashlib.sha256(token).hexdigest()[:16], 16))
+            chosen = str(rng.choice(available, p=np.asarray(list(numeric_weights.values())) / sum(numeric_weights.values())))
+            names = [chosen]
+            return names
         if mode not in {"all", "single", "multiple"}:
-            raise ValueError("tag_selection must be all, single, or multiple")
+            raise ValueError("tag_selection must be all, single, multiple, or weighted")
         if mode == "all":
             names = available
         else:
@@ -512,6 +530,23 @@ def _select_loss_signals(
     if unknown:
         raise ValueError(f"loss scenario references unknown signals: {', '.join(sorted(unknown))}")
     return names
+
+
+def _apply_telemetry_loss(
+    signals: dict[str, float], names: list[str], parameters: dict[str, Any], severity: float,
+    draw_for: Any, label: str, affected: set[str],
+) -> None:
+    """Drop selected observations at configured probability times event severity."""
+    loss_pct = float(parameters.get("loss_pct", 100 if label != "missing-telemetry" else 25))
+    if not 0 <= loss_pct <= 100:
+        raise ValueError("loss_pct must be within 0..100")
+    probability = loss_pct * severity / 100
+    for name in names:
+        # Hash-derived draws make loss stable under replay and independent of
+        # iteration order or unrelated RNG consumption.
+        if draw_for(name, label) < probability:
+            signals.pop(name, None)
+            affected.add(name)
 
 
 def simulate(scenario: Scenario, seed: int) -> tuple[pl.DataFrame, dict[str, Any], dict[str, Any]]:
@@ -735,21 +770,28 @@ def _resume_batch(suite_path: Path, runs: int, output: Path, seed: int, workers:
     tasks = []
     for partition, index, run_id, run_seed in run_specs:
         run_dir = output / partition / run_id
-        if all((run_dir / name).is_file() for name in ("run_metadata.json", "ground_truth.json", "telemetry.parquet", "scenario.yaml")):
-            metadata = json.loads((run_dir / "run_metadata.json").read_text(encoding="utf-8"))
-            if metadata.get("seed") != run_seed:
-                raise ValueError(f"checkpoint run seed mismatch: {run_dir}")
-            continue
-        if run_dir.exists():
-            shutil.rmtree(run_dir)
         local_rng = np.random.default_rng(run_seed)
         base = suite["scenario"]
         generation = suite.get("generation", {})
-        scenario_data = _generate_dataset_scenario(base, generation, local_rng, run_id, index, count) if generation else json.loads(json.dumps(base))
+        scenario_data = _generate_dataset_scenario(
+            base, generation, local_rng, run_id, index, counts[partition]
+        ) if generation else json.loads(json.dumps(base))
         scenario_data["run_id"] = run_id
         scenario_data = _resolve_ranges(scenario_data, local_rng)
         scenario_data["run_id"] = run_id
         scenario = Scenario.model_validate(resolve_profiles(scenario_data))
+        expected_hash = hashlib.sha256(
+            json.dumps(scenario.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        if all((run_dir / name).is_file() for name in ("run_metadata.json", "ground_truth.json", "telemetry.parquet", "scenario.yaml")):
+            metadata = json.loads((run_dir / "run_metadata.json").read_text(encoding="utf-8"))
+            if metadata.get("seed") != run_seed:
+                raise ValueError(f"checkpoint run seed mismatch: {run_dir}")
+            if metadata.get("scenario_sha256") != expected_hash:
+                raise ValueError(f"checkpoint run does not match deterministic scenario: {run_dir}")
+            continue
+        if run_dir.exists():
+            shutil.rmtree(run_dir)
         tasks.append((scenario.model_dump(mode="json"), run_seed, str(run_dir)))
     if workers == 1:
         for task in tasks:
@@ -839,6 +881,10 @@ def _batch_to_directory(
     class_distribution = {"normal": 0, "anomalous": 0}
     partition_class_distribution = {partition: {"normal": 0, "anomalous": 0} for partition in partitions}
     asset_distribution: dict[str, int] = {}
+    process_profile_distribution: dict[str, int] = {}
+    process_profile_distribution_by_partition: dict[str, dict[str, int]] = {
+        name: {} for name in partitions
+    }
     event_distribution: dict[str, int] = {}
     event_distribution_by_partition = {partition: {} for partition in partitions}
     regime_distribution: dict[str, int] = {}
@@ -878,6 +924,15 @@ def _batch_to_directory(
                 "scenario_version": scenario.scenario_version,
                 "asset_ids": [asset.asset_id for asset in scenario.assets],
                 "asset_classes": [asset.asset_class for asset in scenario.assets],
+                "process_profiles": [
+                    {
+                        "asset_id": asset.asset_id,
+                        "asset_class": asset.asset_class,
+                        "profile": asset.process_profile,
+                        "version": asset.process_profile_version,
+                    }
+                    for asset in scenario.assets
+                ],
                 "configured_shift_pattern": scenario.shift_pattern,
             })
             sample_class = "anomalous" if scenario.anomalies else "normal"
@@ -889,6 +944,10 @@ def _batch_to_directory(
                 partition_events[anomaly.type] = partition_events.get(anomaly.type, 0) + 1
             for asset in scenario.assets:
                 asset_distribution[asset.asset_class] = asset_distribution.get(asset.asset_class, 0) + 1
+                profile_key = f"{asset.asset_class}:{asset.process_profile}@{asset.process_profile_version}"
+                process_profile_distribution[profile_key] = process_profile_distribution.get(profile_key, 0) + 1
+                partition_profiles = process_profile_distribution_by_partition[partition]
+                partition_profiles[profile_key] = partition_profiles.get(profile_key, 0) + 1
     if tasks:
         if workers == 1:
             for scenario_data, run_seed, run_dir_text in tasks:
@@ -947,6 +1006,8 @@ def _batch_to_directory(
         "class_distribution": class_distribution,
         "class_distribution_by_partition": partition_class_distribution,
         "asset_distribution": asset_distribution,
+        "process_profile_distribution": process_profile_distribution,
+        "process_profile_distribution_by_partition": process_profile_distribution_by_partition,
         "event_distribution": event_distribution,
         "event_distribution_by_partition": event_distribution_by_partition,
         "regime_episode_distribution": regime_distribution,

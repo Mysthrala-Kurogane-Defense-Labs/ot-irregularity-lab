@@ -156,11 +156,24 @@ def test_difficulty_profiles_resolve_to_numeric_parameters():
 
     resolved = resolve_profiles({"anomalies": [{
         "type": "bearing_degradation", "difficulty": "hard",
-        "parameters": {"vibration_gain": 1.0, "temperature_gain": 0.4},
+        "parameters": {"vibration_gain": 1.0, "temperature_gain": 0.4, "loss_pct": 80},
     }]})["anomalies"][0]
     assert resolved["parameters"]["vibration_gain"] == 0.1
     assert resolved["parameters"]["temperature_gain"] == 0.04000000000000001
+    assert resolved["parameters"]["loss_pct"] == 8.0
     assert resolved["resolved_difficulty"] == {"profile": "hard", "gain_scale": 0.1}
+
+
+def test_very_hard_profile_resolves_slow_onset_for_progressive_faults():
+    from ot_lab.simulation import resolve_profiles
+
+    resolved = resolve_profiles({"anomalies": [
+        {"type": "bearing_degradation", "difficulty": "very_hard", "parameters": {"vibration_gain": 1.0}},
+        {"type": "sudden_spike", "difficulty": "very_hard", "parameters": {"magnitude": 10.0}},
+    ]})["anomalies"]
+    assert resolved[0]["parameters"]["vibration_gain"] == 0.05
+    assert resolved[0]["parameters"]["onset_delay_power"] == 1.0
+    assert "onset_delay_power" not in resolved[1]["parameters"]
 
 
 def test_range_resolution_rejects_invalid_challenge_bounds(tmp_path):

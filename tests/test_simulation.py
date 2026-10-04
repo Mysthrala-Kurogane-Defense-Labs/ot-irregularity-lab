@@ -18,6 +18,7 @@ from ot_lab.simulation import (
     EPOCH,
     _affect,
     _generate_suite_scenario,
+    _resolve_ranges,
     batch,
     replay,
     simulate,
@@ -564,6 +565,38 @@ def test_metropt_rail_apu_profile_stays_inside_observed_mode_envelopes():
     assert all(0 <= sample["oil_temperature_c"] <= 110 for sample in loaded + off)
 
 
+def test_metropt_profile_distinguishes_stopped_from_offloaded_current():
+    asset = AssetSpec(
+        asset_id="APU-1", asset_class="compressor", process_profile="metropt3_rail_apu",
+        process_profile_version="1.1.0",
+    )
+    off = [simulate_step(asset, ProcessState(temperature=65), "OFF", 10, 22, np.random.default_rng(seed)) for seed in range(200)]
+    idle = [simulate_step(asset, ProcessState(temperature=65), "IDLE", 10, 22, np.random.default_rng(seed)) for seed in range(200)]
+    off_median = float(np.median([sample["motor_current_a"] for sample in off]))
+    idle_median = float(np.median([sample["motor_current_a"] for sample in idle]))
+    assert off_median == pytest.approx(0.04, abs=0.01)
+    assert idle_median == pytest.approx(4.0, abs=0.1)
+    assert all(8.1 <= sample["pressure_bar"] <= 10.0 for sample in off + idle)
+
+
+def test_metropt_profile_v1_keeps_legacy_idle_current():
+    asset = AssetSpec(asset_id="APU-1", asset_class="compressor", process_profile="metropt3_rail_apu")
+    idle = [simulate_step(asset, ProcessState(temperature=65), "IDLE", 10, 22, np.random.default_rng(seed)) for seed in range(50)]
+    assert float(np.median([sample["motor_current_a"] for sample in idle])) == pytest.approx(0.04, abs=0.01)
+
+
+def test_metropt_profile_v11_emits_documented_startup_peak_once_per_start():
+    asset = AssetSpec(
+        asset_id="APU-1", asset_class="compressor", process_profile="metropt3_rail_apu",
+        process_profile_version="1.1.0",
+    )
+    state = ProcessState(temperature=65)
+    first = simulate_step(asset, state, "WARMUP", 1, 22, np.random.default_rng(1))
+    following = simulate_step(asset, state, "WARMUP", 1, 22, np.random.default_rng(1))
+    assert first["motor_current_a"] == 9.0
+    assert 0 <= following["motor_current_a"] < 0.1
+
+
 def test_metropt_rail_apu_profile_is_rejected_for_non_compressor_assets():
     with pytest.raises(ValueError, match="requires asset_class=compressor"):
         AssetSpec(asset_id="P-1", asset_class="pump", process_profile="metropt3_rail_apu")
@@ -587,6 +620,248 @@ def test_metropt_rail_apu_profile_rejects_nonpositive_time_constants():
             asset_id="APU-1", asset_class="compressor", process_profile="metropt3_rail_apu",
             process_parameters={"oil_thermal_tau_s": 0},
         )
+    with pytest.raises(ValueError, match="current_unloaded_a must be within"):
+        AssetSpec(
+            asset_id="APU-1", asset_class="compressor", process_profile="metropt3_rail_apu",
+            process_profile_version="1.1.0", process_parameters={"current_unloaded_a": 25},
+        )
+    with pytest.raises(ValueError, match="only available in profile version 1.1.0"):
+        AssetSpec(
+            asset_id="APU-1", asset_class="compressor", process_profile="metropt3_rail_apu",
+            process_profile_version="1.0.0", process_parameters={"current_unloaded_a": 4.0},
+        )
+    with pytest.raises(ValueError, match="unsupported process_profile_version"):
+        AssetSpec(
+            asset_id="APU-1", asset_class="compressor", process_profile="metropt3_rail_apu",
+            process_profile_version="9.0.0",
+        )
+
+
+def test_centrifugal_vfd_profile_uses_pump_affinity_relations():
+    parameters = {"sensor_noise_scale": 1e-10, "actuator_tau_s": 0.01}
+    asset = AssetSpec(
+        asset_id="P-1", asset_class="pump", process_profile="centrifugal_vfd",
+        process_parameters=parameters,
+    )
+    low_state, high_state = ProcessState(temperature=22), ProcessState(temperature=22)
+    low = simulate_step(asset, low_state, "LOW_LOAD", 100, 22, np.random.default_rng(3))
+    high = simulate_step(asset, high_state, "HIGH_LOAD", 100, 22, np.random.default_rng(3))
+    assert high["flow_l_min"] / low["flow_l_min"] == pytest.approx(high["rpm"] / low["rpm"])
+    assert high["pressure_bar"] / low["pressure_bar"] == pytest.approx((high["rpm"] / low["rpm"]) ** 2)
+    assert high["motor_current_a"] > low["motor_current_a"]
+    assert high_state.temperature > low_state.temperature
+
+
+def test_centrifugal_vfd_profile_rejects_wrong_asset_and_unworkable_motor_rating():
+    with pytest.raises(ValueError, match="requires asset_class=pump"):
+        AssetSpec(asset_id="C-1", asset_class="compressor", process_profile="centrifugal_vfd")
+    with pytest.raises(ValueError, match="engineering maximum"):
+        AssetSpec(
+            asset_id="P-1", asset_class="pump", process_profile="centrifugal_vfd",
+            process_parameters={"pump_rated_flow_l_min": 2000, "pump_rated_pressure_bar": 13,
+                                "pump_total_efficiency": 0.35, "pump_supply_voltage_v": 200,
+                                "pump_power_factor": 0.5},
+        )
+
+
+def test_vfd_pump_accepts_reachable_rating_and_metadata_bounds_are_profile_specific():
+    from ot_lab.process import signal_metadata
+
+    AssetSpec(asset_id="P-1", asset_class="pump", process_profile="centrifugal_vfd",
+              process_parameters={"pump_rated_flow_l_min": 1000, "pump_rated_pressure_bar": 13})
+    assert signal_metadata("pump")["rpm"][3] == 3600
+    assert signal_metadata("pump", "centrifugal_vfd")["rpm"][3] == 5000
+
+
+def test_centrifugal_vfd_profile_rejects_unknown_parameters():
+    with pytest.raises(ValueError, match="unknown process parameters"):
+        AssetSpec(
+            asset_id="P-1", asset_class="pump", process_profile="centrifugal_vfd",
+            process_parameters={"pump_efficiency": 0.8},
+        )
+
+
+def test_centrifugal_vfd_static_head_curve_and_zero_static_head_limit():
+    base = {
+        "pump_rated_speed_rpm": 2900,
+        "pump_rated_flow_l_min": 750,
+        "pump_rated_pressure_bar": 12,
+        "pump_static_head_fraction": 0.15,
+        "pump_shutoff_head_ratio": 1.4,
+        "sensor_noise_scale": 1e-10,
+        "actuator_tau_s": 0.01,
+    }
+    asset = AssetSpec(
+        asset_id="P-1", asset_class="pump", process_profile="centrifugal_vfd",
+        process_profile_version="1.1.0", process_parameters=base,
+    )
+    low_state = ProcessState(temperature=22)
+    high_state = ProcessState(temperature=22)
+    low = simulate_step(asset, low_state, "LOW_LOAD", 100, 22, np.random.default_rng(3))
+    high = simulate_step(asset, high_state, "HIGH_LOAD", 100, 22, np.random.default_rng(3))
+    static = base["pump_static_head_fraction"]
+    shutoff = base["pump_shutoff_head_ratio"]
+    rated_pressure = base["pump_rated_pressure_bar"]
+    rated_flow = base["pump_rated_flow_l_min"]
+    for state, result in ((low_state, low), (high_state, high)):
+        speed_ratio = state.rpm / base["pump_rated_speed_rpm"]
+        expected_flow_ratio = np.sqrt(max(shutoff * speed_ratio**2 - static, 0) / (shutoff - static))
+        assert result["flow_l_min"] == pytest.approx(rated_flow * expected_flow_ratio, abs=1e-6)
+        expected_pressure = (
+            rated_pressure * (static + (1 - static) * expected_flow_ratio**2)
+            if shutoff * speed_ratio**2 > static
+            else rated_pressure * min(static, shutoff * speed_ratio**2)
+        )
+        assert result["pressure_bar"] == pytest.approx(expected_pressure, abs=1e-6)
+    assert high["flow_l_min"] / rated_flow != pytest.approx(high_state.rpm / base["pump_rated_speed_rpm"])
+    assert high["motor_current_a"] > low["motor_current_a"]
+
+    friction_only = AssetSpec(
+        asset_id="P-2", asset_class="pump", process_profile="centrifugal_vfd",
+        process_profile_version="1.1.0",
+        process_parameters={**base, "pump_static_head_fraction": 0.0},
+    )
+    state = ProcessState(temperature=22)
+    sample = simulate_step(friction_only, state, "HIGH_LOAD", 100, 22, np.random.default_rng(4))
+    ratio = state.rpm / base["pump_rated_speed_rpm"]
+    assert sample["flow_l_min"] == pytest.approx(rated_flow * ratio, abs=1e-6)
+    assert sample["pressure_bar"] == pytest.approx(rated_pressure * ratio**2, abs=1e-6)
+
+
+def test_centrifugal_vfd_curve_parameters_are_versioned():
+    with pytest.raises(ValueError, match="only available in profile version 1.1.0"):
+        AssetSpec(
+            asset_id="P-1", asset_class="pump", process_profile="centrifugal_vfd",
+            process_profile_version="1.0.0", process_parameters={"pump_static_head_fraction": 0.2},
+        )
+    with pytest.raises(ValueError, match="pump_static_head_fraction must be within"):
+        AssetSpec(
+            asset_id="P-1", asset_class="pump", process_profile="centrifugal_vfd",
+            process_profile_version="1.1.0", process_parameters={"pump_static_head_fraction": 0.9},
+        )
+
+
+def test_centrifugal_vfd_scenario_generation_and_replay(tmp_path):
+    from pathlib import Path
+
+    from ot_lab.simulation import read_scenario, replay, write_run
+
+    scenario = read_scenario(Path(__file__).parents[1] / "scenarios" / "normal-pump-centrifugal-vfd.yaml")
+    source_dir, replay_dir = tmp_path / "run", tmp_path / "replayed"
+    write_run(scenario, 42, source_dir)
+    replay(source_dir, replay_dir)
+    assert pl.read_parquet(source_dir / "telemetry.parquet").equals(
+        pl.read_parquet(replay_dir / "telemetry.parquet")
+    )
+    assert (source_dir / "ground_truth.json").read_bytes() == (replay_dir / "ground_truth.json").read_bytes()
+
+
+def test_training_v04_samples_seeded_pump_process_models_and_parameters():
+    import yaml
+
+    suite = yaml.safe_load(Path("suites/training-v0.4.yaml").read_text(encoding="utf-8"))
+    profile_definitions = json.dumps(suite["generation"]["asset_profiles"], sort_keys=True)
+    vfd_parameters = set()
+    vfd_pump_count = 0
+    for seed in range(240):
+        rng = np.random.default_rng(seed)
+        data = _generate_suite_scenario(suite["scenario"], suite["generation"], rng, f"model-{seed}")
+        data = _resolve_ranges(data, rng)
+        Scenario.model_validate(data)
+        for asset in data["assets"]:
+            if asset.get("process_profile") == "centrifugal_vfd":
+                vfd_pump_count += 1
+                params = asset["process_parameters"]
+                assert 2800 <= params["pump_rated_speed_rpm"] <= 3000
+                assert 700 <= params["pump_rated_flow_l_min"] <= 800
+                assert 10 <= params["pump_rated_pressure_bar"] <= 12
+                vfd_parameters.add(tuple(sorted(params.items())))
+    assert vfd_pump_count >= 20
+    assert len(vfd_parameters) >= 20
+    assert json.dumps(suite["generation"]["asset_profiles"], sort_keys=True) == profile_definitions
+
+
+def test_training_v05_samples_versioned_static_head_parameters():
+    import yaml
+
+    suite = yaml.safe_load(Path("suites/training-v0.5.yaml").read_text(encoding="utf-8"))
+    counts = 0
+    observed = set()
+    for seed in range(240):
+        rng = np.random.default_rng(seed)
+        data = _generate_suite_scenario(suite["scenario"], suite["generation"], rng, f"vfd-static-{seed}")
+        data = _resolve_ranges(data, rng)
+        Scenario.model_validate(data)
+        for asset in data["assets"]:
+            if asset.get("process_profile") == "centrifugal_vfd":
+                counts += 1
+                assert asset["process_profile_version"] == "1.1.0"
+                params = asset["process_parameters"]
+                assert 0.0 <= params["pump_static_head_fraction"] <= 0.3
+                assert 1.2 <= params["pump_shutoff_head_ratio"] <= 1.5
+                observed.add((params["pump_static_head_fraction"], params["pump_shutoff_head_ratio"]))
+                model = AssetSpec.model_validate(asset)
+                for regime in ("LOW_LOAD", "NORMAL_LOAD", "HIGH_LOAD"):
+                    signals = simulate_step(
+                        model, ProcessState(temperature=22), regime, 60, 22,
+                        np.random.default_rng(seed + len(observed)),
+                    )
+                    assert all(np.isfinite(value) for value in signals.values())
+                    assert 0 <= signals["flow_l_min"] <= 3000
+                    assert 0 <= signals["pressure_bar"] <= 30
+                    assert 0 <= signals["motor_current_a"] <= 100
+    assert counts >= 20
+    assert len(observed) >= 20
+
+
+def test_hidden_challenge_v04_samples_static_head_pump_version():
+    import yaml
+
+    suite = yaml.safe_load(Path("suites/challenge-v0.4.yaml").read_text(encoding="utf-8"))
+    found = False
+    for seed in range(500):
+        rng = np.random.default_rng(seed)
+        data = _generate_suite_scenario(suite["scenario"], suite["generation"], rng, f"static-head-{seed}")
+        data = _resolve_ranges(data, rng)
+        Scenario.model_validate(data)
+        for asset in data["assets"]:
+            if asset.get("process_profile") == "centrifugal_vfd":
+                found = True
+                assert asset["process_profile_version"] == "1.1.0"
+                assert 0.0 <= asset["process_parameters"]["pump_static_head_fraction"] <= 0.4
+                assert 1.15 <= asset["process_parameters"]["pump_shutoff_head_ratio"] <= 1.6
+                break
+        if found:
+            break
+    assert found
+
+
+def test_hidden_challenge_samples_vfd_without_disclosing_process_profile(tmp_path):
+    import yaml
+
+    from ot_lab.simulation import generate_challenge
+
+    training = Path("suites/training-v0.4.yaml")
+    challenge = Path("suites/challenge-v0.3.yaml")
+    chosen_seed = None
+    challenge_suite = yaml.safe_load(challenge.read_text(encoding="utf-8"))
+    for seed in range(500):
+        rng = np.random.default_rng(seed)
+        data = _generate_suite_scenario(
+            challenge_suite["scenario"], challenge_suite["generation"], rng, "challenge-hidden",
+        )
+        data = _resolve_ranges(data, rng)
+        if any(asset.get("process_profile") == "centrifugal_vfd" for asset in data["assets"]):
+            chosen_seed = seed
+            break
+    assert chosen_seed is not None
+
+    case_dir, _ = generate_challenge(training, tmp_path, chosen_seed, challenge)
+    assert (case_dir / "telemetry.parquet").is_file()
+    assert not (case_dir / "scenario.yaml").exists()
+    metadata = json.loads((case_dir / "run_metadata.json").read_text(encoding="utf-8"))
+    assert "seed" not in metadata and "scenario_sha256" not in metadata
+    assert "centrifugal_vfd" not in json.dumps(metadata)
 
 
 def test_sampling_jitter_changes_intervals_deterministically():
@@ -826,6 +1101,8 @@ def test_randomized_training_dataset_has_mixed_faults_and_auditable_partitions(t
     assert manifest["data_license"] == "CC-BY-4.0"
     assert manifest["generator_argv"][-1] == str(output)
     assert len(manifest["asset_distribution"]) == 4
+    assert sum(manifest["process_profile_distribution"].values()) == sum(manifest["asset_distribution"].values())
+    assert all(run["process_profiles"] for run in manifest["runs"])
     assert len(manifest["event_distribution"]) >= 12
     assert len(manifest["regime_episode_distribution"]) >= 4
     assert manifest["master_seed"] == 20261003
@@ -978,7 +1255,7 @@ def test_discrete_effect_severity_scales_effect_frequency(kind):
         event = Anomaly(
             type=kind, asset="P-1", start=0, duration=10,
             severity=severity,
-            parameters={"loss_pct": 80, "tag_selection": "single"} if kind == "single_signal_loss" else {"loss_pct": 80},
+            parameters={"loss_pct": 80} if kind != "quality_degradation" else {},
         )
         for sample_index in range(2000):
             _row, affected, quality = _affect(
@@ -996,6 +1273,32 @@ def test_discrete_effect_severity_scales_effect_frequency(kind):
     assert observed[0] == 0
     assert observed == sorted(observed)
     assert observed[-1] > observed[1] > 0
+
+
+@pytest.mark.parametrize(("kind", "parameters"), [
+    ("missing_telemetry", {"loss_pct": 40}),
+    ("single_signal_loss", {"loss_pct": 40, "signal": "tag_0"}),
+    ("asset_communication_loss", {"loss_pct": 40}),
+])
+def test_communication_loss_uses_configured_base_rate_times_severity(kind, parameters):
+    observed = []
+    for severity in (0.25, 0.5, 1.0):
+        event = Anomaly(type=kind, asset="P-1", start=0, duration=10,
+                        severity=severity, parameters=parameters)
+        lost = 0
+        expected = 0
+        for sample_index in range(4000):
+            signals = {f"tag_{index}": float(index) for index in range(5)}
+            row, _affected, _quality = _affect(
+                event, signals, 1, {"process": ProcessState(temperature=20)},
+                "pump", sample_index, 555,
+            )
+            expected += 1 if kind == "single_signal_loss" else 5
+            lost += (1 if "tag_0" not in row else 0) if kind == "single_signal_loss" else 5 - len(row)
+        observed.append(lost / expected)
+
+    assert observed == sorted(observed)
+    assert observed == pytest.approx([0.10, 0.20, 0.40], abs=0.025)
 
 
 @pytest.mark.parametrize(("severity", "expected"), [(0.0, 20.0), (0.5, 15.0), (1.0, 10.0)])
@@ -1029,7 +1332,11 @@ def test_missing_telemetry_supports_configurable_tag_selection(selection, count)
     scenario = Scenario.model_validate({**fixture_scenario().model_dump(), "sampling_jitter_ms": 0, "anomalies": [{
         "type": "missing_telemetry", "asset": "ASSET-01", "start": 5,
         "duration": 5, "severity": 1.0,
-        "parameters": {"loss_pct": 100, "tag_selection": selection, "tag_count": count},
+            "parameters": {
+                "loss_pct": 100,
+                "tag_selection": selection,
+                **({"tag_count": count} if selection == "multiple" else {}),
+            },
     }]})
     telemetry, truth, _ = simulate(scenario, 88)
     selected = truth["events"][0]["affected_signals"]
@@ -1042,13 +1349,62 @@ def test_missing_telemetry_supports_configurable_tag_selection(selection, count)
 
 
 def test_loss_selection_rejects_unknown_and_impossible_tag_counts():
-    for parameters in ({"signal": "not_a_tag"}, {"tag_selection": "multiple", "tag_count": 99}):
+    for parameters in (
+        {"signal": "not_a_tag"},
+        {"tag_selection": "multiple", "tag_count": 99},
+        {"tag_selection": "weighted", "tag_weights": {"not_a_tag": 1}},
+    ):
         scenario = Scenario.model_validate({**fixture_scenario().model_dump(), "anomalies": [{
             "type": "missing_telemetry", "asset": "ASSET-01", "start": 5,
             "duration": 5, "parameters": parameters,
         }]})
-        with pytest.raises(ValueError, match="unknown signals|tag_count"):
+        with pytest.raises(ValueError, match="unknown signals|tag_count|tag_weights"):
             simulate(scenario, 2)
+    with pytest.raises(ValueError, match="tag_weights"):
+        Anomaly(type="missing_telemetry", asset="P-1", start=0, duration=1,
+                parameters={"tag_selection": "weighted", "tag_weights": {"motor_current_a": -1}})
+
+
+@pytest.mark.parametrize(("kind", "parameters", "message"), [
+    ("sensor_bias", {"bais": 1.0}, "unknown parameters"),
+    ("missing_telemetry", {"loss_pct": 101}, "loss_pct must be within 0..100"),
+    ("bearing_degradation", {"progression": "gradual"}, "progression must be"),
+    ("missing_telemetry", {"tag_selection": "weighted"}, "weighted tag_selection requires"),
+    ("quality_degradation", {"threshold": 0.8}, "unknown parameters"),
+    ("cavitation", {"flow_loss": 1.1}, "flow_loss must be within 0..1"),
+    ("single_signal_loss", {"signals": ["motor_current_a", "pressure_bar"]}, "must select exactly one signal"),
+])
+def test_anomaly_parameters_are_type_checked_and_reject_silent_noops(kind, parameters, message):
+    with pytest.raises(ValueError, match=message):
+        Anomaly(type=kind, asset="P-1", start=0, duration=1, parameters=parameters)
+
+
+def test_sensor_drift_accepts_signed_rate_for_both_directions():
+    event = Anomaly(
+        type="sensor_drift", asset="P-1", start=0, duration=120, severity=1,
+        parameters={"signal": "pressure_bar", "rate_per_minute": -0.5},
+    )
+    row, _, _ = _affect(event, {"pressure_bar": 8.0}, 60, {}, "pump", 60, 1)
+    assert row["pressure_bar"] == pytest.approx(7.5)
+
+
+def test_weighted_missing_telemetry_tag_selection_is_seeded_and_respects_weights():
+    from ot_lab.simulation import _select_loss_signals
+
+    parameters = {"tag_selection": "weighted", "tag_weights": {"motor_current_a": 9, "pressure_bar": 1}}
+    selected = []
+    for seed in range(100):
+        event = Anomaly(type="missing_telemetry", asset="P-1", start=5, duration=10, parameters=parameters)
+        names = _select_loss_signals(
+            {"motor_current_a": 1.0, "pressure_bar": 1.0}, parameters, seed, event, 0,
+        )
+        assert names == _select_loss_signals(
+            {"motor_current_a": 1.0, "pressure_bar": 1.0}, parameters, seed, event, 99,
+        )
+        selected.extend(names)
+
+    current_fraction = selected.count("motor_current_a") / len(selected)
+    assert current_fraction == pytest.approx(0.9, abs=0.1)
 
 
 @pytest.mark.parametrize("loss_pct", [5, 10, 25, 50, 100])
@@ -1153,6 +1509,47 @@ def test_air_leak_rejects_incompatible_assets_and_unbounded_effects():
             "type": "air_leak", "asset": "ASSET-01", "start": 5, "duration": 10,
             "parameters": {"pressure_loss_fraction": 1.1},
         }), 19)
+
+
+def test_very_hard_progressive_fault_has_slow_onset_and_five_percent_peak():
+    from ot_lab.simulation import resolve_profiles
+
+    parameters = resolve_profiles({"anomalies": [{
+        "type": "bearing_degradation", "difficulty": "very_hard",
+        "parameters": {"vibration_gain": 0.20},
+    }]})["anomalies"][0]["parameters"]
+    event = Anomaly(
+        type="bearing_degradation", asset="CNC-01", start=0, duration=10,
+        severity=1.0, parameters=parameters,
+    )
+    at_midpoint, _, _ = _affect(
+        event, {"spindle_vibration_mm_s": 10.0}, 5.0, {}, "cnc", 5, 1,
+    )
+    at_end, _, _ = _affect(
+        event, {"spindle_vibration_mm_s": 10.0}, 10.0, {}, "cnc", 10, 1,
+    )
+    assert at_midpoint["spindle_vibration_mm_s"] == pytest.approx(10.025)
+    assert at_end["spindle_vibration_mm_s"] == pytest.approx(10.1)
+
+
+def test_progressive_fault_uses_actual_subsecond_event_duration():
+    event = Anomaly(
+        type="bearing_degradation", asset="CNC-01", start=0, duration=0.5,
+        severity=1.0, parameters={"vibration_gain": 0.20},
+    )
+    near_end, _, _ = _affect(
+        event, {"spindle_vibration_mm_s": 10.0}, 0.49, {}, "cnc", 1, 1,
+    )
+    assert near_end["spindle_vibration_mm_s"] == pytest.approx(10 * (1 + 0.20 * 0.98))
+
+
+@pytest.mark.parametrize("delay", [-0.1, 4.1, float("inf")])
+def test_progressive_fault_rejects_invalid_onset_delay_power(delay):
+    with pytest.raises(ValueError, match="onset_delay_power must be finite and within 0..4"):
+        Anomaly(
+            type="bearing_degradation", asset="CNC-01", start=0, duration=10,
+            parameters={"onset_delay_power": delay},
+        )
 
 
 def test_multivariate_novelty_stays_inside_declared_engineering_bounds():
@@ -1303,6 +1700,56 @@ generation:
         (run["run_id"], run["seed"], run["telemetry_sha256"]) for run in clean_manifest["runs"]
     ]
     assert not (resumable / ".resume.json").exists()
+
+
+def test_resumable_coverage_uses_each_partition_size_and_checks_scenario_hash(tmp_path, monkeypatch):
+    from ot_lab import simulation
+
+    suite = tmp_path / "coverage-resume.yaml"
+    suite.write_text("""suite_id: coverage-resume-test
+partitions: {train: 0.70, validation: 0.15, test: 0.15}
+scenario:
+  scenario_id: coverage-resume-test
+  duration_s: 12
+  sampling_interval_ms: 1000
+  assets: [{asset_id: C-1, asset_class: compressor}]
+generation:
+  anomaly_probability: 0.0
+  coverage_by_partition: {air_leak: 50}
+  anomaly_templates:
+    - type: air_leak
+      asset_classes: [compressor]
+      parameters: {pressure_loss_fraction: {min: 0.1, max: 0.2}}
+""", encoding="utf-8")
+    output = tmp_path / "coverage-resume"
+    original = simulation.write_run
+    written = 0
+
+    def interrupt_after_two(*args, **kwargs):
+        nonlocal written
+        written += 1
+        if written == 3:
+            raise RuntimeError("stop after two coverage runs")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(simulation, "write_run", interrupt_after_two)
+    with pytest.raises(RuntimeError, match="stop after two coverage runs"):
+        simulation.batch(suite, 100, output, seed=20261011, resume=True)
+    monkeypatch.setattr(simulation, "write_run", original)
+    corrupt_run = output / "train" / "train-00002" / "run_metadata.json"
+    original_metadata = corrupt_run.read_text(encoding="utf-8")
+    metadata = json.loads(original_metadata)
+    metadata["scenario_sha256"] = "0" * 64
+    corrupt_run.write_text(json.dumps(metadata), encoding="utf-8")
+    with pytest.raises(ValueError, match="checkpoint run does not match deterministic scenario"):
+        simulation.batch(suite, 100, output, seed=20261011, resume=True)
+    corrupt_run.write_text(original_metadata, encoding="utf-8")
+    simulation.batch(suite, 100, output, seed=20261011, resume=True)
+    manifest = json.loads((output / "dataset_manifest.json").read_text())
+    assert manifest["event_distribution_by_partition"]["train"]["air_leak"] >= 7
+    assert manifest["event_distribution_by_partition"]["validation"]["air_leak"] >= 1
+    assert manifest["event_distribution_by_partition"]["test"]["air_leak"] >= 1
+
 
 
 def test_parallel_batch_matches_serial_runs_and_manifest(tmp_path):
@@ -1466,6 +1913,12 @@ with open(sys.argv[2], "w", encoding="utf-8") as output:
     assert rows[0]["event_detection_rate"] == 0
     assert rows[1]["event_detection_rate"] == 1
     assert rows[1]["window_precision"] == pytest.approx(4 / 30)
+    assert rows[1]["threshold"] == 0.5
+    assert rows[1]["overlap_threshold"] == 0.1
+    assert rows[1]["alert_merge_gap_seconds"] == 0.5
+    assert rows[1]["false_positives_per_asset_day"] == pytest.approx(rows[1]["false_positives_per_asset_hour"] * 24)
+    assert "mean_time_to_first_detection_s" in rows[1]
+    assert "event_type_metrics" in rows[1]
     assert all(path.exists() for path in prediction_paths)
 
 
@@ -1566,6 +2019,12 @@ def test_docker_submission_passes_only_minimal_environment(tmp_path, monkeypatch
     assert "--read-only" in command
     assert "--cap-drop=ALL" in command
     assert "--security-opt=no-new-privileges:true" in command
+    assert "--pids-limit=128" in command
+    assert "--memory=2g" in command
+    assert "--cpus=2" in command
+    assert "--user=65534:65534" in command
+    assert "--tmpfs" in command
+    assert "/tmp:rw,noexec,nosuid,size=64m" in command
     assert "--env" in command and "OT_LAB_INPUT=/ot-lab/input.parquet" in command
     mounts = [command[i + 1] for i, item in enumerate(command[:-1]) if item == "--mount"]
     assert len(mounts) == 2
@@ -1576,6 +2035,11 @@ def test_docker_submission_passes_only_minimal_environment(tmp_path, monkeypatch
     assert "--log-driver=none" in command
     assert "OT_LAB_OUTPUT=/ot-lab/output.jsonl" in command
     assert "GH_TOKEN" not in [command[i + 1] for i, item in enumerate(command[:-1]) if item == "--env"]
+    environment = [command[i + 1] for i, item in enumerate(command[:-1]) if item == "--env"]
+    assert environment == [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "TMPDIR=/tmp", "OT_LAB_INPUT=/ot-lab/input.parquet", "OT_LAB_OUTPUT=/ot-lab/output.jsonl",
+    ]
     assert removed == [["docker", "rm", "--force", "fake-container-id"]]
     assert out.read_text() == "{}\n"
 

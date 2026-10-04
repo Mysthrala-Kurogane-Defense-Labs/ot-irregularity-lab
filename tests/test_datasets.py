@@ -1,9 +1,11 @@
+import hashlib
 import json
+import sys
 import zipfile
 
 import pytest
 
-from ot_lab.datasets import package_dataset
+from ot_lab.datasets import package_dataset, verify_dataset_package
 from ot_lab.simulation import batch
 
 
@@ -29,12 +31,18 @@ def test_partition_packages_are_deterministic_and_do_not_include_run_truth_or_se
     first_manifest = json.loads((first / "release_manifest.json").read_text(encoding="utf-8"))
     second_manifest = json.loads((second / "release_manifest.json").read_text(encoding="utf-8"))
     assert first_manifest == second_manifest
+    sums = (first / "SHA256SUMS.txt").read_text(encoding="utf-8").splitlines()
+    assert sums == (second / "SHA256SUMS.txt").read_text(encoding="utf-8").splitlines()
+    for line in sums:
+        expected_hash, filename = line.split("  ", maxsplit=1)
+        assert hashlib.sha256((first / filename).read_bytes()).hexdigest() == expected_hash
     assert first_manifest["dataset_version"] == "0.4.0"
     assert set(first_manifest["partitions"]) == {"train", "test"}
     assert first_manifest["contains_run_seeds"] is False
     assert first_manifest["contains_ground_truth"] is False
     assert first_manifest["partitions"]["train"]["class_distribution"]["normal"] == 4
     assert first_manifest["partitions"]["train"]["asset_distribution"]["pump"] == 4
+    assert first_manifest["partitions"]["train"]["process_profile_distribution"]["pump:generic@1.0.0"] == 4
     for partition in ("train", "test"):
         package = first_manifest["partitions"][partition]["path"]
         assert (first / package).read_bytes() == (second / package).read_bytes()
@@ -48,6 +56,7 @@ def test_partition_packages_are_deterministic_and_do_not_include_run_truth_or_se
             assert inner["partition"] == partition
             assert inner["contains_run_seeds"] is False
             assert inner["contains_ground_truth"] is False
+            assert inner["process_profile_distribution"]["pump:generic@1.0.0"] == first_manifest["partitions"][partition]["run_count"]
             assert "master_seed" not in inner
             assert not any("ground_truth" in name or "scenario" in name or "run_metadata" in name for name in archive.namelist())
             assert archive.read("DATASET_LICENSE.txt") == license_file.read_bytes()
@@ -104,6 +113,75 @@ def test_partition_package_checks_license_against_suite_declaration(tmp_path):
     dataset, license_file = _source_dataset(tmp_path)
     with pytest.raises(ValueError, match="does not match suite license"):
         package_dataset(dataset, "0.4.0", tmp_path / "wrong-license", license_file, "CC0-1.0", ["train"])
+
+
+def test_partition_package_verifier_checks_artifacts_and_separation(tmp_path):
+    dataset, license_file = _source_dataset(tmp_path)
+    release = package_dataset(dataset, "0.4.0", tmp_path / "release", license_file, "CC-BY-4.0", ["train", "test"])
+
+    report = verify_dataset_package(release)
+
+    assert report["dataset_version"] == "0.4.0"
+    assert {item["partition"] for item in report["partitions"]} == {"train", "test"}
+    assert report["checksums_verified"] is True
+    assert report["archive_crc_verified"] is True
+    assert report["telemetry_ground_truth_separated"] is True
+    assert report["verified_file_count"] == 6
+
+
+def test_partition_package_verifier_rejects_changed_artifact(tmp_path):
+    dataset, license_file = _source_dataset(tmp_path)
+    release = package_dataset(dataset, "0.4.0", tmp_path / "release", license_file, "CC-BY-4.0", ["train"])
+    with (release / "train.zip").open("ab") as archive:
+        archive.write(b"tampered")
+
+    with pytest.raises(ValueError, match="release checksum mismatch: train.zip"):
+        verify_dataset_package(release)
+
+
+def test_partition_package_verifier_rejects_ground_truth_inside_telemetry(tmp_path):
+    dataset, license_file = _source_dataset(tmp_path)
+    release = package_dataset(dataset, "0.4.0", tmp_path / "release", license_file, "CC-BY-4.0", ["train"])
+    telemetry_path = release / "train.zip"
+    with zipfile.ZipFile(telemetry_path, "a") as archive:
+        archive.writestr("ground_truth/leak.json", b'{"events":[]}')
+
+    manifest_path = release / "release_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["partitions"]["train"]["sha256"] = hashlib.sha256(telemetry_path.read_bytes()).hexdigest()
+    manifest["partitions"]["train"]["bytes"] = telemetry_path.stat().st_size
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    files = [release / name for name in ("DATASET_LICENSE.txt", "release_manifest.json", "train.zip", "train-labels.zip")]
+    (release / "SHA256SUMS.txt").write_text(
+        "".join(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n" for path in files), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="unexpected contents in telemetry archive"):
+        verify_dataset_package(release)
+
+
+def test_dataset_verify_cli_prints_json_report(tmp_path, monkeypatch, capsys):
+    dataset, license_file = _source_dataset(tmp_path)
+    release = package_dataset(dataset, "0.4.0", tmp_path / "release", license_file, "CC-BY-4.0", ["train"])
+    from ot_lab import cli
+
+    monkeypatch.setattr(sys, "argv", ["ot-lab", "dataset", "verify", "--release", str(release), "--json"])
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["dataset_id"] == "dataset"
+    assert output["checksums_verified"] is True
+
+
+def test_dataset_verify_cli_reports_invalid_release_without_traceback(tmp_path, monkeypatch, capsys):
+    from ot_lab import cli
+
+    monkeypatch.setattr(sys, "argv", ["ot-lab", "dataset", "verify", "--release", str(tmp_path / "missing")])
+    with pytest.raises(SystemExit, match="1"):
+        cli.main()
+    captured = capsys.readouterr()
+    assert "ot-lab: dataset verification failed:" in captured.err
+    assert captured.out == ""
 
 
 @pytest.mark.parametrize("run_id", ["../outside", "..\\outside", "C:\\outside"])

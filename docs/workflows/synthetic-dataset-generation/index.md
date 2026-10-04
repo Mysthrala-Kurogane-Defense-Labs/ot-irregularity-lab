@@ -1,5 +1,17 @@
 # Synthetic dataset generation records
 
+- 2026-10-04 — [Training v0.6 release candidates](runs/2026-10-04-training-v0.6-3000-candidate.md): superseded an earlier candidate after fixing resumable partition coverage; regenerated, hashed, replayed, packaged, and verified 3,000 runs, with the corrected candidate still local and unpublished.
+- 2026-10-04 — [AI4EU robotic pump source review](runs/2026-10-04-ai4eu-pump-source-review.md): inspected an openly licensed high-rate paint-pump source and documented its scope, interpolation limits, and a separate cavitation dataset license conflict.
+- 2026-10-04 — [Centrifugal pump static-head profile v1.1.0](runs/2026-10-04-pump-static-head-profile-v1.1.md): added a versioned quadratic pump/system-curve intersection, explicit static-head ranges for training and hidden challenge suites, replay checks, and bounded randomized-scenario validation.
+- 2026-10-04 — [Keyless Sigstore signing](runs/2026-10-04-keyless-signing.md): prepared new-tag and release-asset workflows; live OIDC signing remains pending a future authorized release.
+- 2026-10-04 — [Randomized pump profile suites](runs/2026-10-04-randomized-pump-profile-suites.md): per-asset process model sampling, training manifest profile counts, hidden challenge profile variation, and an asset-profile mutation regression fix.
+- 2026-10-04 — [Centrifugal pump VFD profile](runs/2026-10-04-centrifugal-vfd-profile.md): optional affinity-law process profile, scenario example, deterministic replay and physical-relationship checks.
+- 2026-10-04 — [MetroPT analysis QA and rail APU profile v1.1](runs/2026-10-04-metropt-analysis-qa-profile-v1.1.md): expanded aggregate source-quality accounting; documented stopped/offloaded/startup current mapping with a versioned illustrative process profile and replay verification.
+- 2026-10-04 — [Model-agnostic architecture guard](runs/2026-10-04-model-agnostic-guard.md): regression checks prohibit detector frameworks in runtime dependencies and core imports.
+- 2026-10-04 — [Numeric difficulty profiles for progressive faults](runs/2026-10-04-anomaly-difficulty-profiles.md): activated a validated numeric slow-onset parameter for `very_hard` progressive fault scenarios.
+- 2026-10-04 — [Type-specific anomaly parameter contract](runs/2026-10-04-anomaly-parameter-contract.md): rejects unknown/no-op keys and invalid value domains for all 16 event families.
+- 2026-10-04 — [Resumable partition coverage integrity](runs/2026-10-04-resume-partition-coverage.md): fixed a stale partition-count bug found during a 3,000-run candidate and added deterministic checkpoint-hash regression coverage.
+
 - 2026-10-03 — [Normal process variation](runs/2026-10-03-normal-process-variation.md): randomized per-asset load setpoint, response time, and sensor-noise values with event-free 30-seed verification.
 - 2026-10-03 — [Parallel run generation](runs/2026-10-03-parallel-run-generation.md): deterministic `--workers` support, byte-identical partitions, cross-worker resume, and measured 60-run throughput.
 - 2026-10-03 — [Linux process-pool deadlock](runs/2026-10-03-linux-process-pool.md): replaced fork with spawn after a reproducible post-Polars worker hang; Linux WSL full suite passed after the fix.
