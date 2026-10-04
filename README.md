@@ -4,7 +4,7 @@ OT Irregularity Lab is an independent, open source preview toolkit for generatin
 
 Current public software release: [v0.3.1](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/releases/tag/v0.3.1). The unreleased working tree targets v0.4.0 and adds randomized compressor air-leak cases; see the open [implementation PR](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/pull/5).
 
-Current dataset release: [OT Irregularity Dataset v0.4.0 (1,000 runs)](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/releases/tag/dataset-v0.4.0). Telemetry and labels are distributed as separate archives.
+Current dataset release: [OT Irregularity Dataset v0.5.0 (3,000 runs)](https://github.com/Mysthrala-Kurogane-Defense-Labs/ot-irregularity-lab/releases/tag/dataset-v0.5.0). Telemetry and labels are distributed as separate archives. See the [generation and verification record](docs/workflows/synthetic-dataset-generation/runs/2026-10-04-training-v0.5-3000.md).
 
 All generated data is synthetic, generated, and non-customer data. Process simulation runs without OpenPLC or protocol services. Apache-2.0 applies to the software; dataset releases declare their own data license and version.
 

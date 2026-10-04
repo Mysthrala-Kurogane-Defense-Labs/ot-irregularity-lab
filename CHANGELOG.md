@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Published OT Irregularity Training Dataset v0.5.0 with 3,000 independently seeded runs under CC BY 4.0; telemetry and label partitions are separate and remote asset hashes were verified.
 - Added a MetroPT-3-informed compressor `air_leak` event that couples configurable pressure loss and compensating motor-current increase; added versioned training v0.3 and challenge v0.2 distributions without changing older suites.
 - Added compressor-containing randomized asset profiles, increased the explicit `air_leak` sampling weight for suite coverage, and bounded seeded backtracking for multi-event placement; a 300-run validation draw records 26 air leaks across train/validation/test, with one in test.
 - Compared public industrial datasets and repositories with explicit license and transfer limits; no third-party data or detector implementation was added.
