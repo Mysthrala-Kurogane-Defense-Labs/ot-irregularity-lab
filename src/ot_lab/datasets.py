@@ -7,7 +7,7 @@ import json
 import re
 import tempfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 PARTITIONS = ("train", "validation", "test")
@@ -246,3 +246,171 @@ def package_dataset(
         (stage / "SHA256SUMS.txt").write_text("\n".join(checksums) + "\n", encoding="utf-8")
         stage.replace(output)
     return output
+
+
+def _sha256_stream(source: Any) -> str:
+    digest = hashlib.sha256()
+    for block in iter(lambda: source.read(1024 * 1024), b""):
+        digest.update(block)
+    return digest.hexdigest()
+
+
+def _safe_zip_member(name: Any, expected_prefix: str | None = None) -> str:
+    if not isinstance(name, str) or "\\" in name:
+        raise ValueError("release archive contains an unsafe member path")
+    path = PurePosixPath(name)
+    if path.is_absolute() or any(part in ("", ".", "..") for part in path.parts):
+        raise ValueError("release archive contains an unsafe member path")
+    if expected_prefix is not None and (not path.parts or path.parts[0] != expected_prefix):
+        raise ValueError("release archive member is outside its expected directory")
+    return name
+
+
+def _require(condition: bool, message: str) -> None:
+    if not condition:
+        raise ValueError(message)
+
+
+def verify_dataset_package(release: Path) -> dict[str, Any]:
+    """Verify a packaged dataset's checksums, archives, metadata and label boundary."""
+    if not release.is_dir():
+        raise FileNotFoundError(release)
+    try:
+        release_manifest_path = release / "release_manifest.json"
+        license_path = release / "DATASET_LICENSE.txt"
+        sums_path = release / "SHA256SUMS.txt"
+        manifest = json.loads(release_manifest_path.read_text(encoding="utf-8"))
+        _require(isinstance(manifest, dict), "release manifest must be a JSON object")
+        _require(manifest.get("contains_run_seeds") is False, "release manifest must exclude run seeds")
+        _require(manifest.get("contains_ground_truth") is False, "release manifest must exclude ground truth")
+        _require(manifest.get("synthetic") is True and manifest.get("generated") is True and manifest.get("customer_data") is False,
+                 "release must be marked synthetic, generated, and non-customer")
+        _require(bool(manifest.get("dataset_id")) and bool(manifest.get("dataset_version")),
+                 "release manifest must identify the dataset and version")
+        _require(license_path.is_file() and license_path.stat().st_size > 0, "release license file is missing or empty")
+
+        partitions = manifest.get("partitions")
+        _require(isinstance(partitions, dict) and bool(partitions), "release manifest must include at least one partition")
+        _require(set(partitions).issubset(PARTITIONS), "release manifest contains an unsupported partition")
+        expected_names = {"release_manifest.json", "DATASET_LICENSE.txt", "SHA256SUMS.txt"}
+        for partition, details in partitions.items():
+            _require(isinstance(details, dict), f"invalid release metadata for {partition}")
+            _require(details.get("path") == f"{partition}.zip", f"invalid telemetry archive path for {partition}")
+            label_details = details.get("labels_artifact")
+            _require(isinstance(label_details, dict), f"missing labels archive metadata for {partition}")
+            _require(label_details.get("path") == f"{partition}-labels.zip", f"invalid labels archive path for {partition}")
+            expected_names.update((details["path"], label_details["path"]))
+        actual_paths = list(release.iterdir())
+        _require(all(path.is_file() and not path.is_symlink() for path in actual_paths), "release directory must contain regular files only")
+        _require({path.name for path in actual_paths} == expected_names, "release directory files do not match its manifest")
+
+        checksum_lines = sums_path.read_text(encoding="utf-8").splitlines()
+        checksums: dict[str, str] = {}
+        for line in checksum_lines:
+            match = re.fullmatch(r"([0-9a-f]{64})  ([A-Za-z0-9][A-Za-z0-9._-]*)", line)
+            _require(match is not None, "SHA256SUMS.txt contains an invalid line")
+            digest, name = match.groups()
+            _require(name != "SHA256SUMS.txt" and name not in checksums, "SHA256SUMS.txt contains a duplicate or recursive entry")
+            checksums[name] = digest
+        _require(set(checksums) == expected_names - {"SHA256SUMS.txt"}, "SHA256SUMS.txt does not cover the release files exactly")
+        for name, expected in checksums.items():
+            _require(_sha256(release / name) == expected, f"release checksum mismatch: {name}")
+
+        license_bytes = license_path.read_bytes()
+        total_unpacked_bytes = 0
+        verified_partitions: list[dict[str, Any]] = []
+        seen_run_ids: set[str] = set()
+        for partition, details in partitions.items():
+            telemetry_path = release / details["path"]
+            labels_path = release / details["labels_artifact"]["path"]
+            for path, artifact in ((telemetry_path, details), (labels_path, details["labels_artifact"])):
+                _require(path.stat().st_size == artifact.get("bytes"), f"artifact size mismatch: {path.name}")
+                _require(_sha256(path) == artifact.get("sha256"), f"artifact checksum mismatch: {path.name}")
+
+            with zipfile.ZipFile(telemetry_path) as archive:
+                names = archive.namelist()
+                _require(len(names) == len(set(names)), f"duplicate members in {telemetry_path.name}")
+                _require(set(names) == {f"{partition}.parquet", "DATASET_LICENSE.txt", "release_manifest.json"},
+                         f"unexpected contents in telemetry archive {telemetry_path.name}")
+                total_unpacked_bytes += sum(item.file_size for item in archive.infolist())
+                _require(archive.testzip() is None, f"CRC failure in {telemetry_path.name}")
+                _require(archive.read("DATASET_LICENSE.txt") == license_bytes, f"license mismatch in {telemetry_path.name}")
+                telemetry_manifest = json.loads(archive.read("release_manifest.json"))
+                _require(telemetry_manifest.get("contains_ground_truth") is False, f"telemetry manifest exposes ground truth for {partition}")
+                _require(telemetry_manifest.get("contains_run_seeds") is False, f"telemetry manifest exposes run seeds for {partition}")
+                for key in ("dataset_id", "dataset_version", "partition", "data_license", "source_dataset_manifest_sha256"):
+                    _require(telemetry_manifest.get(key) == (manifest.get(key) if key != "partition" else partition),
+                             f"telemetry manifest {key} mismatch for {partition}")
+                parquet_meta = telemetry_manifest.get("artifact", {})
+                _require(parquet_meta.get("path") == f"{partition}.parquet", f"invalid telemetry member reference for {partition}")
+                with archive.open(f"{partition}.parquet") as source:
+                    parquet_hash = _sha256_stream(source)
+                _require(parquet_hash == parquet_meta.get("sha256"), f"Parquet member checksum mismatch for {partition}")
+
+            with zipfile.ZipFile(labels_path) as archive:
+                names = archive.namelist()
+                _require(len(names) == len(set(names)), f"duplicate members in {labels_path.name}")
+                total_unpacked_bytes += sum(item.file_size for item in archive.infolist())
+                _require(archive.testzip() is None, f"CRC failure in {labels_path.name}")
+                _require(archive.read("DATASET_LICENSE.txt") == license_bytes, f"license mismatch in {labels_path.name}")
+                label_manifest = json.loads(archive.read("release_manifest.json"))
+                _require(label_manifest.get("contains_ground_truth") is True, f"labels manifest must identify ground truth for {partition}")
+                _require(label_manifest.get("contains_run_seeds") is False, f"labels manifest exposes run seeds for {partition}")
+                _require(label_manifest.get("contains_scenarios") is False, f"labels manifest exposes scenarios for {partition}")
+                for key in ("dataset_id", "dataset_version", "partition", "data_license", "source_dataset_manifest_sha256"):
+                    _require(label_manifest.get(key) == (manifest.get(key) if key != "partition" else partition),
+                             f"labels manifest {key} mismatch for {partition}")
+                runs = label_manifest.get("runs")
+                expected_run_count = details.get("run_count")
+                _require(isinstance(runs, list) and len(runs) == expected_run_count,
+                         f"labels run count mismatch for {partition}")
+                expected_members = {"DATASET_LICENSE.txt", "release_manifest.json"}
+                partition_run_ids: set[str] = set()
+                for run in runs:
+                    run_id = _validate_run_id(run.get("run_id"))
+                    _require(run_id not in partition_run_ids and run_id not in seen_run_ids,
+                             f"duplicate run id in labels archives: {run_id}")
+                    partition_run_ids.add(run_id)
+                    seen_run_ids.add(run_id)
+                    truth_meta = run.get("ground_truth", {})
+                    eval_meta = run.get("evaluation_metadata", {})
+                    truth_name = _safe_zip_member(truth_meta.get("path"), "ground_truth")
+                    eval_name = _safe_zip_member(eval_meta.get("path"), "evaluation_metadata")
+                    _require(truth_name == f"ground_truth/{run_id}.json", f"invalid ground-truth path for {run_id}")
+                    _require(eval_name == f"evaluation_metadata/{run_id}.json", f"invalid evaluation metadata path for {run_id}")
+                    expected_members.update((truth_name, eval_name))
+                    truth_bytes = archive.read(truth_name)
+                    _require(hashlib.sha256(truth_bytes).hexdigest() == truth_meta.get("sha256"), f"ground-truth hash mismatch for {run_id}")
+                    truth = json.loads(truth_bytes)
+                    _require(truth.get("run_id") == run_id and isinstance(truth.get("events"), list),
+                             f"invalid ground truth for {run_id}")
+                    eval_bytes = archive.read(eval_name)
+                    _require(hashlib.sha256(eval_bytes).hexdigest() == eval_meta.get("sha256"), f"evaluation metadata hash mismatch for {run_id}")
+                    safe_metadata = json.loads(eval_bytes)
+                    allowed_keys = {
+                        "run_id", "started_at", "duration_s", "sampling_interval_ms", "observation_count",
+                        "asset_count", "asset_ids", "synthetic", "generated", "customer_data",
+                    }
+                    _require(set(safe_metadata) == allowed_keys, f"unexpected evaluation metadata fields for {run_id}")
+                    _require(safe_metadata.get("run_id") == run_id, f"evaluation metadata run id mismatch for {run_id}")
+                _require(set(names) == expected_members, f"unexpected or missing labels members in {labels_path.name}")
+            verified_partitions.append({
+                "partition": partition,
+                "run_count": details.get("run_count"),
+                "observation_count": details.get("observation_count"),
+                "telemetry_sha256": details["sha256"],
+                "labels_sha256": details["labels_artifact"]["sha256"],
+            })
+        return {
+            "dataset_id": manifest["dataset_id"],
+            "dataset_version": manifest["dataset_version"],
+            "data_license": manifest.get("data_license"),
+            "verified_file_count": len(expected_names) - 1,
+            "verified_uncompressed_bytes": total_unpacked_bytes,
+            "partitions": verified_partitions,
+            "checksums_verified": True,
+            "archive_crc_verified": True,
+            "telemetry_ground_truth_separated": True,
+        }
+    except zipfile.BadZipFile as error:
+        raise ValueError(f"invalid release archive: {error}") from None

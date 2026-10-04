@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import sys
+import zipfile
 from pathlib import Path
 
 from . import __version__
 from .calibration import write_metropt_analysis
-from .datasets import package_dataset
+from .datasets import package_dataset, verify_dataset_package
 from .evaluation import aggregate_challenge_metrics, evaluate, write_challenge_report
 from .simulation import batch, generate_challenge, read_scenario, replay, write_run
 from .submission import DEFAULT_MAX_OUTPUT_BYTES, run_docker_submission, run_submission
@@ -34,7 +36,7 @@ def main() -> None:
     batch_cmd.add_argument("--seed", type=int, default=42)
     batch_cmd.add_argument("--output", type=Path, required=True)
     batch_cmd.add_argument("--workers", type=int, default=1, help="parallel run-generation processes (default: 1)")
-    dataset_cmd = commands.add_parser("dataset", help="create a seeded dataset from a generation suite")
+    dataset_cmd = commands.add_parser("dataset", help="create, package, or verify a dataset")
     dataset_subcommands = dataset_cmd.add_subparsers(dest="dataset_command", required=True)
     create_cmd = dataset_subcommands.add_parser("create", help="generate train/validation/test runs and a manifest")
     create_cmd.add_argument("--suite", type=Path, required=True)
@@ -50,6 +52,9 @@ def main() -> None:
     package_cmd.add_argument("--license-file", type=Path, required=True, help="full data license notice to include with each artifact")
     package_cmd.add_argument("--partition", dest="partitions", nargs="+", choices=("train", "validation", "test"))
     package_cmd.add_argument("--output", type=Path, required=True, help="new directory for per-partition ZIPs and release manifest")
+    verify_cmd = dataset_subcommands.add_parser("verify", help="verify a packaged release's checksums and telemetry/label separation")
+    verify_cmd.add_argument("--release", type=Path, required=True, help="release directory produced by `ot-lab dataset package`")
+    verify_cmd.add_argument("--json", action="store_true", help="print a machine-readable verification report")
     calibration_cmd = commands.add_parser("calibration", help="analyze public reference data locally; source records are not copied")
     calibration_sub = calibration_cmd.add_subparsers(dest="calibration_command", required=True)
     metropt_cmd = calibration_sub.add_parser("analyze-metropt", help="summarize MetroPT-3 compressor modes and cadence")
@@ -119,6 +124,19 @@ def main() -> None:
         print(args.output / "dataset_manifest.json")
     elif args.command == "dataset" and args.dataset_command == "package":
         print(package_dataset(args.dataset, args.dataset_version, args.output, args.license_file, args.data_license, args.partitions))
+    elif args.command == "dataset" and args.dataset_command == "verify":
+        try:
+            report = verify_dataset_package(args.release)
+        except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile, EOFError) as error:
+            print(f"ot-lab: dataset verification failed: {error}", file=sys.stderr)
+            raise SystemExit(1) from None
+        if args.json:
+            print(json.dumps(report, indent=2))
+        else:
+            print(
+                f"Verified {report['dataset_id']} v{report['dataset_version']}: "
+                f"{len(report['partitions'])} partition(s), checksums and archive CRCs valid; labels are separate."
+            )
     elif args.command == "calibration":
         print(write_metropt_analysis(args.input, args.output))
     elif args.command == "benchmark":
