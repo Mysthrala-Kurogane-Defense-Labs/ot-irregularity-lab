@@ -4,12 +4,33 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import tempfile
 import zipfile
 from pathlib import Path
 from typing import Any
 
 PARTITIONS = ("train", "validation", "test")
+_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+_WINDOWS_RESERVED_NAMES = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+
+
+def _contained_file(root: Path, *parts: str) -> Path:
+    resolved_root = root.resolve()
+    candidate = resolved_root.joinpath(*parts).resolve()
+    if not candidate.is_relative_to(resolved_root):
+        raise ValueError("dataset manifest path escapes the dataset directory")
+    if not candidate.is_file():
+        raise FileNotFoundError(candidate)
+    return candidate
+
+
+def _validate_run_id(run_id: Any) -> str:
+    if not isinstance(run_id, str) or not _RUN_ID.fullmatch(run_id):
+        raise ValueError("dataset manifest run_id must be a safe path component")
+    if run_id.split(".", 1)[0].upper() in _WINDOWS_RESERVED_NAMES:
+        raise ValueError("dataset manifest run_id must not use a Windows reserved device name")
+    return run_id
 
 
 def _sha256(path: Path) -> str:
@@ -96,10 +117,10 @@ def package_dataset(
         for partition in selected:
             details = source_manifest.get("partition_files", {}).get(partition, {})
             source_name = details.get("path")
-            if not source_name:
+            if source_name != f"{partition}.parquet":
                 raise ValueError(f"dataset has no Parquet artifact for partition {partition}")
-            source = dataset / source_name
-            if not source.is_file() or _sha256(source) != details.get("sha256"):
+            source = _contained_file(dataset, source_name)
+            if _sha256(source) != details.get("sha256"):
                 raise ValueError(f"partition artifact hash mismatch: {source}")
             content_hash = _sha256(source)
             partition_runs = [run for run in source_manifest.get("runs", []) if run.get("partition") == partition]
@@ -136,10 +157,9 @@ def package_dataset(
             with zipfile.ZipFile(labels_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
                 _zip_bytes(archive, "DATASET_LICENSE.txt", license_bytes)
                 for run in partition_runs:
-                    run_id = run["run_id"]
-                    run_dir = dataset / partition / run_id
-                    truth_path = run_dir / "ground_truth.json"
-                    metadata_path = run_dir / "run_metadata.json"
+                    run_id = _validate_run_id(run.get("run_id"))
+                    truth_path = _contained_file(dataset, partition, run_id, "ground_truth.json")
+                    metadata_path = _contained_file(dataset, partition, run_id, "run_metadata.json")
                     if _sha256(truth_path) != run.get("ground_truth_sha256") or _sha256(metadata_path) != run.get("metadata_sha256"):
                         raise ValueError(f"ground-truth or metadata hash mismatch for run {run_id}")
                     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))

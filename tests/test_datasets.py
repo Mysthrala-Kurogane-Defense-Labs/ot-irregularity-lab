@@ -104,3 +104,38 @@ def test_partition_package_checks_license_against_suite_declaration(tmp_path):
     dataset, license_file = _source_dataset(tmp_path)
     with pytest.raises(ValueError, match="does not match suite license"):
         package_dataset(dataset, "0.4.0", tmp_path / "wrong-license", license_file, "CC0-1.0", ["train"])
+
+
+@pytest.mark.parametrize("run_id", ["../outside", "..\\outside", "C:\\outside"])
+def test_partition_package_rejects_unsafe_run_ids(tmp_path, run_id):
+    dataset, license_file = _source_dataset(tmp_path)
+    manifest_path = dataset / "dataset_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["runs"][0]["run_id"] = run_id
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="safe path component"):
+        package_dataset(dataset, "0.4.0", tmp_path / "unsafe-run-id", license_file, "CC-BY-4.0", ["train"])
+
+
+@pytest.mark.parametrize("run_id", ["CON", "con.txt", "AUX", "COM1", "lpt9.json"])
+def test_partition_package_rejects_windows_device_run_ids(tmp_path, run_id):
+    dataset, license_file = _source_dataset(tmp_path)
+    manifest_path = dataset / "dataset_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["runs"][0]["run_id"] = run_id
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Windows reserved device name"):
+        package_dataset(dataset, "0.4.0", tmp_path / "reserved-run-id", license_file, "CC-BY-4.0", ["train"])
+
+
+def test_partition_package_rejects_parquet_path_outside_dataset(tmp_path):
+    dataset, license_file = _source_dataset(tmp_path)
+    manifest_path = dataset / "dataset_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["partition_files"]["train"]["path"] = "../outside.parquet"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="no Parquet artifact"):
+        package_dataset(dataset, "0.4.0", tmp_path / "unsafe-parquet-path", license_file, "CC-BY-4.0", ["train"])
