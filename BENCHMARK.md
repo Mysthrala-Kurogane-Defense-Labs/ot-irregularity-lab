@@ -21,6 +21,20 @@ Metric definitions:
 - Detection latency is measured from the event's observed start to the first intersecting alert; event coverage and detection rate are reported separately.
 - Rates per asset-hour/day divide false-positive alert windows by run duration times declared asset count. They do not account for asset-specific operational exposure.
 
+## Metric design and references
+
+Time-series events span intervals, so a benchmark should make its event matching, overlap, fragmentation and timing rules explicit. Tatbul et al. formalize range-based precision and recall with configurable overlap, positional and cardinality preferences; OT Irregularity Lab's v2 event score is a separate contract, not a direct implementation of their RP/RR equations. It reports coverage and latency alongside one-to-one event/alert-episode matching to expose partial detection, duplicate alarms and misses without collapsing these trade-offs into one number. The affiliation-metric study also documents that time-series scoring choices can produce unintuitive or gameable comparisons; treat each metric as a defined view of performance, not an objective measure of detector quality.
+
+`window_pr_auc` uses non-interpolated average precision over expected cadence positions. Its step-wise weighting follows the standard AP definition `sum((recall_n - recall_(n-1)) * precision_n)`; this is intentionally distinct from trapezoidal area under a PR curve. The challenge-level `pr_auc` is the macro mean of per-case average precision among cases with positive samples, so each eligible case has equal weight.
+
+References:
+
+- Tatbul, N. et al. (2018), [Precision and Recall for Time Series](https://papers.nips.cc/paper_files/paper/2018/hash/8f468c873a32bb0619eaeb2050ba45d1-Abstract.html), NeurIPS 31. Provides range-based precision/recall with explicit domain choices; cited as motivation, not as the exact OT Lab formula.
+- Huet, A., Navarro, J. and Rossi, D. (2022), [Local Evaluation of Time Series Anomaly Detection Algorithms](https://arxiv.org/abs/2206.13167), KDD '22. Reviews limits and design choices of point and event metrics and proposes affiliation metrics.
+- scikit-learn, [`average_precision_score`](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.average_precision_score.html). Documents non-interpolated average precision and its difference from trapezoidal PR area.
+
+Always publish the `metric_version`, score threshold, overlap threshold, alert merge gap, partition/suite versions and challenge case count with reported scores. Compare submissions on the same generated cases or the same hidden challenge distribution and keep all thresholds fixed. Report event, cadence-level and false-positive-rate metrics together; do not select simulator settings to improve one submission's result.
+
 Use `ot-lab compare --run runs/cnc-0042 --predictions results/model-a.jsonl results/model-b.jsonl --output results/comparison` to score multiple prediction files against the same run and create `comparison.json` plus per-model reports. Compare models on identical telemetry and thresholds, and report both event and timestamp metrics. Never choose generator parameters based on a submission's score.
 
 For dataset generation, `ot-lab dataset create --suite SUITE --runs N --seed SEED --workers N --output DATASET` generates independent runs in worker processes. The default is `--workers 1`; increasing it changes scheduling only, not the per-run seed plan or generated artifacts. Resumable checkpoints record the worker count used most recently but allow it to change on resume. Worker counts must be positive and cannot exceed the host's reported CPU count. The manifest records `generation_workers` and the exact command.
